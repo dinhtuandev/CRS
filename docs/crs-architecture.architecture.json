@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Kiến trúc hệ thống QLHP",
+    "output": "crs-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1280, 720],
+    "views": [
+      {
+        "id": "request-path",
+        "label": "Luồng request",
+        "focus": ["users", "web", "gateway", "api", "routes"],
+        "note": "Request từ trình duyệt đi qua web gateway vào API theo vai trò."
+      },
+      {
+        "id": "data-path",
+        "label": "Luồng dữ liệu",
+        "focus": ["routes", "pool", "dblogic", "db"],
+        "note": "API gọi MySQL qua pool; nghiệp vụ đăng ký và điểm nằm trong database."
+      },
+      {
+        "id": "deployment",
+        "label": "Triển khai Docker",
+        "focus": ["compose", "web", "api", "db"],
+        "note": "Compose khởi tạo database, chạy API và phục vụ client qua nginx."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "external",
+      "label": "Người dùng",
+      "sublabel": "3 vai trò",
+      "pos": [40, 280],
+      "size": [150, 64]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "React / Vite",
+      "sublabel": "client · localhost:5173",
+      "pos": [260, 280],
+      "size": [170, 64]
+    },
+    {
+      "id": "gateway",
+      "type": "cloud",
+      "label": "Web gateway",
+      "sublabel": "nginx · localhost:8080",
+      "pos": [500, 280],
+      "size": [170, 64]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Express API",
+      "sublabel": "Node.js 22 · localhost:3000",
+      "pos": [740, 280],
+      "size": [180, 64]
+    },
+    {
+      "id": "routes",
+      "type": "backend",
+      "label": "Use-case routes",
+      "sublabel": "4 nhóm API",
+      "pos": [1000, 280],
+      "size": [190, 64]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth & RBAC",
+      "sublabel": "JWT · kiểm tra vai trò",
+      "pos": [1000, 100],
+      "size": [180, 64]
+    },
+    {
+      "id": "pool",
+      "type": "backend",
+      "label": "MySQL connection pool",
+      "sublabel": "mysql2 · tối đa 10 kết nối",
+      "pos": [1000, 470],
+      "size": [190, 64]
+    },
+    {
+      "id": "dblogic",
+      "type": "database",
+      "label": "Nghiệp vụ database",
+      "sublabel": "procedures · triggers · views",
+      "pos": [260, 520],
+      "size": [190, 72]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "MySQL 8.0",
+      "sublabel": "qlhocphan · utf8mb4",
+      "pos": [560, 520],
+      "size": [180, 72]
+    },
+    {
+      "id": "compose",
+      "type": "cloud",
+      "label": "Docker Compose",
+      "sublabel": "db · seed-fix · api · web",
+      "pos": [40, 520],
+      "size": [170, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Client và edge",
+      "wraps": ["web", "gateway"],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Application runtime",
+      "wraps": ["api", "auth", "routes", "pool"],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Data plane",
+      "wraps": ["pool", "dblogic", "db"],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Docker Compose deployment",
+      "wraps": ["compose", "web", "api", "db"],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "users-web",
+      "from": "users",
+      "to": "web",
+      "label": "HTTP /api",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-gateway",
+      "from": "web",
+      "to": "gateway",
+      "label": "static + proxy /api",
+      "labelAt": [465, 358],
+      "variant": "emphasis"
+    },
+    {
+      "id": "gateway-api",
+      "from": "gateway",
+      "to": "api",
+      "label": "proxy /api",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-routes",
+      "from": "api",
+      "to": "routes",
+      "label": "mount /api"
+    },
+    {
+      "id": "routes-auth",
+      "from": "routes",
+      "to": "auth",
+      "label": "JWT / role",
+      "labelAt": [1095, 222],
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "routes-pool",
+      "from": "routes",
+      "to": "pool",
+      "label": "query / CALL",
+      "labelAt": [1095, 390],
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "pool-db",
+      "from": "pool",
+      "to": "db",
+      "label": "mysql2",
+      "labelAt": [880, 490],
+      "route": "orthogonal-h",
+      "via": [[850, 502], [850, 556]],
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "dblogic-db",
+      "from": "dblogic",
+      "to": "db",
+      "label": "SQL + locks",
+      "labelAt": [505, 556],
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "compose-api",
+      "from": "compose",
+      "to": "api",
+      "label": "runs",
+      "labelAt": [480, 410],
+      "route": "orthogonal-h",
+      "via": [[125, 430], [830, 430]],
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "compose-db",
+      "from": "compose",
+      "to": "db",
+      "label": "init + persists",
+      "labelAt": [430, 660],
+      "route": "orthogonal-v",
+      "via": [[230, 556], [230, 640], [650, 640]],
+      "fromSide": "right",
+      "toSide": "bottom"
+    }
+  ]
+}
