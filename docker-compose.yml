@@ -1,0 +1,68 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: qlhp-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: qlhocphan
+    command: --port=3307 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --skip-character-set-client-handshake
+    ports:
+      - "3307:3307"
+    volumes:
+      - qlhp-data:/var/lib/mysql
+      - ./db:/docker-entrypoint-initdb.d:ro
+      - ./scripts:/opt/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "test \"$$(mysql -h localhost -P 3307 -uroot -proot123 -NBe \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='qlhocphan' AND table_name='TAIKHOAN'\")\" = \"1\""]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  # Chạy một lần sau khi db init xong: sinh bcrypt hash cho mật khẩu "123456"
+  # và thay vào bảng TAIKHOAN + ghi vào file seed.
+  seed-fix:
+    image: node:22-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/opt/scripts:ro
+      - ./db:/opt/db
+    command: ["node", "/opt/scripts/fix-seed-password.mjs"]
+    restart: "no"
+
+  # API Express — http://localhost:3000
+  api:
+    build: ./server
+    container_name: qlhp-api
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-doi-chuoi-nay-khi-chay-that}
+      DB_HOST: db
+      DB_PORT: 3307
+      DB_USER: app_qlhp
+      DB_PASSWORD: app_qlhp_pass
+      DB_NAME: qlhocphan
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/auth/me').then((r)=>{if(r.status!==401)process.exit(1)}).catch(()=>process.exit(1))\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Web React (nginx serve dist + proxy /api về api) — http://localhost:8080
+  web:
+    build: ./client
+    container_name: qlhp-web
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  qlhp-data:
