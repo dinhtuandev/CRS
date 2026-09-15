@@ -133,7 +133,7 @@ Protocol: Exclusive Strict 2PL (Exclusive-2PL)
 │  │ next-key locks on range scans.                              │      │       │
 │  └────────────────────────────────────────────────────────────┘      │       │
 │                                                                      │       │
-│  Demo: db/demo/simulate.py (choice 3)                                 │       │
+│  Demo: db/demo/simulate.py (choice 5)                                 │       │
 │    - RC (Read Committed): phantom possible                          │       │
 │    - RR (Repeatable Read): no phantom (snapshot)                    │       │
 │                                                                      │       │
@@ -151,23 +151,21 @@ Protocol: Exclusive Strict 2PL (Exclusive-2PL)
 
 ## 3. Concurrency Demo Scripts
 
+Mỗi file SQL gồm 2 phần: **Phần A gây lỗi** trên MySQL thật (2 session) → **Phần B/C khắc phục + kiểm chứng**. Hướng dẫn từng bước xem `docs/demo-concurrency.md`; bộ test tự động 22 kiểm chứng xem `scripts/verify-demos.mjs`.
+
 ```
-db/demo/  (6 files)
+db/demo/
 │
-├── simulate.py   — Python threading simulator (no MySQL needed)
-│   Menu:
-│   1. Lost Update       → 2 threads read→write, lose +1 update
-│   2. Deadlock + retry  → cyclic wait → one gets 1213 → retry
-│   3. Phantom Read      → RC vs RR compare
-│   4. Exclusive-2PL     → FOR UPDATE holds X-lock to COMMIT
-│   5. Run all
+├── simulate.py               — Python threading simulator (no MySQL needed)
+│   Menu: 1. Lost Update  2. Dirty Read  3. Non-repeatable Read
+│          4. Deadlock + retry  5. Phantom  6. Exclusive-2PL  7. Run all
 │
-├── demo.sql           — SQL setup (reset data, unlock tables)
-├── 01_lost_update.sql — T1/T2 both read, both write, one overwrites
-├── 02_deadlock_retry.sql — T1: A→B lock, T2: B→A lock → deadlock
-├── 03_phantom_read.sql    — SELECT range changes between reads
-├── 04_exclusive_2pl.sql   — FOR UPDATE keeps exclusive lock
-└── 05_deadlock_retry.sql  — Same as 02 but with explicit retry
+├── demo.sql                  — SQL setup: bảng counter + dữ liệu mẫu
+├── 01_lost_update.sql        — A: mất +1 (RC)     | B: FOR UPDATE (2PL)
+├── 02_dirty_read.sql         — A: đọc bẩn (RU)    | B: READ COMMITTED
+├── 03_nonrepeatable_read.sql — A: giá trị đổi (RC)| B: REPEATABLE READ snapshot
+├── 04_phantom.sql            — A: hàng ma (RR)    | B/C: next-key lock, SERIALIZABLE
+└── 05_deadlock_retry.sql     — A: ERROR 1213      | B/C: lock ordering, retry proc
 ```
 
 ## 4. Concurrency Matrix: Protocols vs Scenarios

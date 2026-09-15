@@ -93,9 +93,7 @@
 │  └─────────────────────────────────────────────────────────────┘                    │
 │                                                                                      │
 │  ┌──────────────────────────────────────────────────────────────────────────────┐   │
-│  │  seed-fix Container (Node:22-alpine, one-shot)                                │   │
-│  │  waits for db healthy → fix-seed-password.mjs                                  │   │
-│  │  → bcrypt hash "123456" → UPDATE TAIKHOAN                                   │   │
+│  │  bcrypt hash cho mật khẩu demo "123456" đã verify sẵn trong 03_seed.sql      │   │
 │  └──────────────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -109,8 +107,7 @@
                       │  Health: table check     │
                       │  ├─ Init: 01_schema.sql   │
                       │  ├─ Init: 02_security.sql │
-                      │  ├─ Init: 03_seed.sql     │
-                      │  └─ Init: scripts/*.mjs   │
+                      │  └─ Init: 03_seed.sql     │
                       │  Volumes:                │
                       │    qlhp-data (持久化)      │
                       │    ./db (init, ro)       │
@@ -118,20 +115,15 @@
                                    │
                                    │ depends_on (healthy)
                                    │
-              ┌─────────────────────┼────────────────────┐
-              │                     │                    │
-      ┌───────┴───────┐             │           ┌────────┴────────┐
-      │ seed-fix      │             │           │ web (nginx)    │
-      │ (one-shot)    │             │           │ Port 8080:80    │
-      │ node:22       │             │           │ proxy /api→api  │
-      │ Fix passwords │             │           └─────────────────┘
-      └───────────────┘             │
-                                    │ depends_on (healthy)
-                                    │
-                           ┌────────┴────────┐
-                           │ api (Node 22)   │
-                           │ Port 3000:3000  │
-                           │ ENTRYPOINT=node │
-                           │ Health: /me→401 │
-                           └─────────────────┘
+                                   │
+                                   │ depends_on (healthy)
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │                             │
+           ┌────────┴────────┐           ┌────────┴────────┐
+           │ web (nginx)     │           │ api (Node 22)   │
+           │ Port 8080:80    │           │ Port 3000:3000  │
+           │ proxy /api→api  │           │ ENTRYPOINT=node │
+           └─────────────────┘           │ Health: /me→401 │
+                                         └─────────────────┘
 ```

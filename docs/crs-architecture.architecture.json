@@ -104,7 +104,7 @@
       "id": "compose",
       "type": "cloud",
       "label": "Docker Compose",
-      "sublabel": "db · seed-fix · api · web",
+      "sublabel": "db · api · web",
       "pos": [40, 520],
       "size": [170, 72]
     }

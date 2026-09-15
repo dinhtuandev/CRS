@@ -23,11 +23,11 @@
 
 | Thành phần | Mô tả |
 |---|---|
-| `db/` | `01_schema.sql` (bảng, function, procedure, trigger, view), `02_security.sql` (role + GRANT), `03_seed.sql` (data demo), `demo/` (script demo concurrency) |
+| `db/` | `01_schema.sql` (bảng, function, procedure, trigger, view), `02_security.sql` (role + GRANT), `03_seed.sql` (data demo), `demo/` (5 kịch bản lỗi tương tranh + khắc phục) |
+| `docs/` | `demo-concurrency.md` — tài liệu demo từng bước cho 5 lỗi tương tranh |
 | `server/` | Express 5 API + JWT, kết nối MySQL qua user `app_qlhp`, có Swagger UI |
 | `client/` | React 19 + Vite, proxy `/api` → `http://localhost:3000` |
-| `scripts/` | `fix-seed-password.mjs` — service `seed-fix` sinh bcrypt hash cho mk demo |
-| `docker-compose.yml` | 4 service: `db` (MySQL 8.0), `seed-fix`, `api`, `web` (nginx) |
+| `docker-compose.yml` | 3 service: `db` (MySQL 8.0), `api`, `web` (nginx) |
 
 ---
 
@@ -159,30 +159,50 @@ Dự án cung cấp **2 cách demo giao thức tương tranh** — một chạy 
 | Concurrency – retry | Deadlock 1213 → retry tới 3 lần | `server/routes/sinhvien.js:53-54` |
 | Isolation level | `REPEATABLE-READ` (mặc định InnoDB) | MySQL config |
 
-### 2.2 Demo bằng Python (khuyến nghị — không cần Docker)
+### 2.2 Demo 5 lỗi tương tranh — kịch bản + khắc phục
+
+Mỗi lỗi có 2 phần trong cùng 1 file SQL: **Phần A gây lỗi** → quan sát kết quả sai → **Phần B/C khắc phục** và kiểm chứng lại. Hướng dẫn từng bước (bảng thao tác xen kẽ 2 session, kết quả mong đợi): **[docs/demo-concurrency.md](docs/demo-concurrency.md)**
+
+| # | Lỗi | Gây lỗi | Khắc phục |
+|---|-----|---------|-----------|
+| 1 | Lost Update | READ COMMITTED, 2 tx cùng đọc rồi ghi đè | `FOR UPDATE` (Exclusive-2PL) |
+| 2 | Dirty Read | READ UNCOMMITTED thấy dữ liệu chưa commit | READ COMMITTED |
+| 3 | Non-repeatable Read | READ COMMITTED thấy giá trị đổi giữa tx | REPEATABLE READ (snapshot) |
+| 4 | Phantom | RR: COUNT che hàng ma nhưng UPDATE vẫn sửa phải | next-key lock `FOR UPDATE` / SERIALIZABLE |
+| 5 | Deadlock | 2 tx khoá 2 hàng ngược thứ tự → ERROR 1213 | khoá cùng thứ tự + retry |
+
+### 2.3 Demo bằng Python (không cần Docker)
 
 ```bash
-python db/demo/simulate.py    # chọn 1-5 hoặc 5 để chạy tất cả
+python db/demo/simulate.py    # chọn 1-6 hoặc 7 để chạy tất cả
 ```
 
 | Lựa chọn | Hiệu ứng |
 |---|---|
 | 1. Lost Update | 2 transaction cùng đọc rồi ghi đè → mất +1 |
-| 2. Deadlock + retry | cyclic wait → một session bị deadlock → retry (max 3) |
-| 3. Phantom | RR tránh phantom (snapshot); RC hiện phantom |
-| 4. Exclusive-2PL | `FOR UPDATE` giữ exclusive lock tới COMMIT |
+| 2. Dirty Read | đọc thấy dữ liệu chưa commit, rollback xong dữ liệu "ảo" |
+| 3. Non-repeatable Read | cùng tx đọc 2 lần, giá trị đổi giữa chừng |
+| 4. Deadlock + retry | cyclic wait → một session bị deadlock → retry (max 3) |
+| 5. Phantom | RR tránh phantom (snapshot); RC hiện phantom |
+| 6. Exclusive-2PL | `FOR UPDATE` giữ exclusive lock tới COMMIT |
 
-### 2.3 Demo trên MySQL thật (qua Docker)
+### 2.4 Demo trên MySQL thật (qua Docker)
 
 ```bash
 # Đảm bảo Docker đang chạy
-docker compose up -d
+docker compose up -d --wait
 
-# Mở 2 terminal MySQL client, chạy từng file SQL theo thứ tự
-mysql -h 127.0.0.1 -P 3307 -u root -proot123 < db/demo/demo.sql
-mysql -h 127.0.0.1 -P 3307 -u root -proot123            # terminal A
-mysql -h 127.0.0.1 -P 3307 -u root -proot123            # terminal B
-# paste các khối trong db/demo/01_lost_update.sql → 05_deadlock_retry.sql
+# Nạp CSDL demo (chạy 1 lần)
+docker compose exec -T db mysql -uroot -proot123 --default-character-set=utf8mb4 < db/demo/demo.sql
+
+# (Tuỳ chọn) tự động hoá kiểm chứng cả 5 lỗi + fix — 22 PASS
+cd server && node ../scripts/verify-demos.mjs
+
+# Mở 2 terminal session A và B
+docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhp_demo
+docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhp_demo
+# Gõ lệnh theo BƯỚC đánh số trong db/demo/01_lost_update.sql → 05_deadlock_retry.sql
+# (kết quả mong đợi ghi sẵn dưới mỗi lệnh)
 ```
 
 ---
