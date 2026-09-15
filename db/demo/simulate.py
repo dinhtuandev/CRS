@@ -53,6 +53,66 @@ def lost_update():
 
 
 # ---------------------------------------------------------------- #
+# 1b. Dirty Read — READ UNCOMMITTED đọc dữ liệu chưa commit
+# ---------------------------------------------------------------- #
+def dirty_read():
+    reset()
+    log("DEMO", "=== Dirty Read (READ UNCOMMITTED) ===")
+    v = {"val": 100}
+    a_committed = threading.Event()
+    b_read1 = threading.Event()
+
+    def tx_a():
+        log("A", "UPDATE value = value + 30  (CHUA commit)")
+        v["val"] += 30
+        b_read1.wait()          # đợi B đọc xong lần 1
+        log("A", "ROLLBACK")
+
+    def tx_b():
+        log("B (RU)", f"READ value = {v['val']}")
+        b_read1.set()
+        a_committed.wait(timeout=0.5)
+        log("B (RU)", f"READ value = {v['val']}  -> da thay du lieu chua commit: DIRTY READ")
+
+    ta = threading.Thread(target=tx_a)
+    tb = threading.Thread(target=tx_b)
+    ta.start(); tb.start()
+    ta.join(); tb.join()
+    log("RESULT", f"gia tri that = 100 (da rollback); B da doc thay 130 = DIRTY READ")
+
+
+# ---------------------------------------------------------------- #
+# 1c. Non-repeatable Read — READ COMMITTED thấy giá trị đổi giữa tx
+# ---------------------------------------------------------------- #
+def nonrepeatable_read():
+    reset()
+    log("DEMO", "=== Non-repeatable Read (READ COMMITTED) ===")
+    state = {"committed": 100}
+    first_read = threading.Event()
+    a_done = threading.Event()
+
+    def tx_a():
+        first_read.wait()
+        time.sleep(0.2)
+        state["committed"] = 200
+        log("A", "UPDATE value = 200 + COMMIT")
+        a_done.set()
+
+    def tx_b():
+        log("B (RC)", f"READ lan 1: value = {state['committed']}")
+        first_read.set()
+        a_done.wait()
+        time.sleep(0.1)
+        log("B (RC)", f"READ lan 2: value = {state['committed']}  -> doi gia tri giua tx!")
+
+    ta = threading.Thread(target=tx_a)
+    tb = threading.Thread(target=tx_b)
+    ta.start(); tb.start()
+    ta.join(); tb.join()
+    log("RESULT", "REPEATABLE READ se chup snapshot: lan 2 van thay 100 -> khong lap lai duoc")
+
+
+# ---------------------------------------------------------------- #
 # 2. Deadlock — 2 transaction cố lấy 2 hàng nghịch thứ tự
 # ---------------------------------------------------------------- #
 def deadlock():
@@ -217,9 +277,11 @@ def two_pl():
 # ---------------------------------------------------------------- #
 MENU = [
     ("1", "Lost Update (READ COMMITTED)", lost_update),
-    ("2", "Deadlock + retry (2PL)", deadlock_retry),
-    ("3", "Phantom (RR vs RC)", phantom),
-    ("4", "Exclusive-2PL (FOR UPDATE)", two_pl),
+    ("2", "Dirty Read (READ UNCOMMITTED)", dirty_read),
+    ("3", "Non-repeatable Read (READ COMMITTED)", nonrepeatable_read),
+    ("4", "Deadlock + retry (2PL)", deadlock_retry),
+    ("5", "Phantom (RR vs RC)", phantom),
+    ("6", "Exclusive-2PL (FOR UPDATE)", two_pl),
 ]
 
 
@@ -227,10 +289,10 @@ def main():
     print("\n=== Demo giao thuc dieu khien tuong tranh (Python) ===\n")
     for key, label, _ in MENU:
         print(f"  {key}. {label}")
-    print("  5. Chay ca 4")
+    print("  7. Chay ca 6")
     print("  q. Thoat")
-    choice = input("\nChon (1-5/q): ").strip().lower()
-    if choice == "5":
+    choice = input("\nChon (1-7/q): ").strip().lower()
+    if choice == "7":
         for _, _, fn in MENU:
             fn()
             print()
