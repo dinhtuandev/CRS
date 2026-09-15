@@ -253,14 +253,20 @@ END$$
 
 CREATE PROCEDURE sp_dangky_hocphan(IN p_masv VARCHAR(10), IN p_malhp VARCHAR(15), IN p_lanhoc VARCHAR(20))
 BEGIN
-  DECLARE v_mahp       VARCHAR(10);
-  DECLARE v_mahk       VARCHAR(20);
-  DECLARE v_sisomax    INT;
-  DECLARE v_dadangky   INT;
+  DECLARE v_lhp_found TINYINT DEFAULT 0;
+  DECLARE v_sv_found TINYINT DEFAULT 0;
+  DECLARE v_hk_found TINYINT DEFAULT 0;
+  DECLARE v_hp_found TINYINT DEFAULT 0;
+  DECLARE v_mahp VARCHAR(10);
+  DECLARE v_mahk VARCHAR(20);
+  DECLARE v_sisomax INT;
+  DECLARE v_lhp_trangthai VARCHAR(10);
+  DECLARE v_sv_trangthai VARCHAR(20);
+  DECLARE v_dadangky INT;
   DECLARE v_tinchi_dky INT;
-  DECLARE v_tinchi_hp  INT;
-  DECLARE v_bd         DATETIME;
-  DECLARE v_kt         DATETIME;
+  DECLARE v_tinchi_hp INT;
+  DECLARE v_bd DATETIME;
+  DECLARE v_kt DATETIME;
 
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
@@ -270,20 +276,46 @@ BEGIN
 
   START TRANSACTION;
 
-  -- (6) trong hạn đăng ký + lấy thông tin lớp (lock dòng LHP chống oversell)
-  SELECT MAHP, MAHK, SISOMAX INTO v_mahp, v_mahk, v_sisomax
+  SELECT 1, MAHP, MAHK, SISOMAX, TRANGTHAI
+    INTO v_lhp_found, v_mahp, v_mahk, v_sisomax, v_lhp_trangthai
     FROM LOPHOCPHAN WHERE MALHP = p_malhp FOR UPDATE;
-  IF v_mahp IS NULL THEN
+
+  IF v_lhp_found = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không tồn tại';
   END IF;
+  IF v_lhp_trangthai <> 'mở' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không mở';
+  END IF;
 
-  SELECT HANDANGKY_BD, HANDANGKY_KT INTO v_bd, v_kt FROM HOCKY WHERE MAHK = v_mahk;
-  IF NOW() < v_bd OR NOW() > v_kt THEN
-    ROLLBACK;
+  SELECT 1, TRANGTHAI INTO v_sv_found, v_sv_trangthai
+    FROM SINHVIEN WHERE MASV = p_masv;
+  IF v_sv_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên không tồn tại';
+  END IF;
+  IF v_sv_trangthai <> 'đang học' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên không được đăng ký';
+  END IF;
+
+  SELECT 1, HANDANGKY_BD, HANDANGKY_KT INTO v_hk_found, v_bd, v_kt
+    FROM HOCKY WHERE MAHK = v_mahk;
+  IF v_hk_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Học kỳ không tồn tại';
+  END IF;
+  IF v_bd IS NULL OR v_kt IS NULL OR NOW() < v_bd OR NOW() > v_kt THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ngoài thời gian đăng ký học phần';
   END IF;
 
-  -- (5) không đăng ký lại HP đã đạt (cho phép học lại / cải thiện)
+  IF p_lanhoc IS NULL OR p_lanhoc NOT IN ('lần 1', 'học lại', 'cải thiện') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lần học không hợp lệ';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM DANGKYHOCPHAN
+    WHERE MASV = p_masv AND MALHP = p_malhp AND TRANGTHAI = 'đăng ký'
+  ) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên đã đăng ký lớp học phần này';
+  END IF;
+
   IF EXISTS (
     SELECT 1 FROM DANGKYHOCPHAN dk
       JOIN LOPHOCPHAN l2 ON l2.MALHP = dk.MALHP
@@ -291,68 +323,59 @@ BEGIN
         AND dk.TRANGTHAI = 'đăng ký'
         AND dk.DIEMHE10 >= 4
   ) THEN
-    ROLLBACK;
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Học phần đã đạt, không đăng ký lại (dùng học lại/cải thiện)';
+    IF p_lanhoc NOT IN ('học lại', 'cải thiện') THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Học phần đã đạt; dùng học lại hoặc cải thiện';
+    END IF;
   END IF;
 
-  -- (1) đã hoàn thành mọi học phần tiên quyết (điểm >= 4)
   IF EXISTS (
     SELECT 1 FROM HOCPHAN_TIENQUYET tq
-    WHERE tq.MAHP = v_mahp
-      AND NOT EXISTS (
-        SELECT 1 FROM DANGKYHOCPHAN dk
-          JOIN LOPHOCPHAN l2 ON l2.MALHP = dk.MALHP
-          WHERE dk.MASV = p_masv AND l2.MAHP = tq.MAHP_TIENQUYET
-            AND dk.TRANGTHAI = 'đăng ký' AND dk.DIEMHE10 >= 4
-      )
+      WHERE tq.MAHP = v_mahp
+        AND NOT EXISTS (
+          SELECT 1 FROM DANGKYHOCPHAN dk
+            JOIN LOPHOCPHAN l2 ON l2.MALHP = dk.MALHP
+            WHERE dk.MASV = p_masv AND l2.MAHP = tq.MAHP_TIENQUYET
+              AND dk.TRANGTHAI = 'đăng ký' AND dk.DIEMHE10 >= 4
+        )
   ) THEN
-    ROLLBACK;
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Chưa hoàn thành học phần tiên quyết';
   END IF;
 
-  -- (3) không trùng lịch trong cùng học kỳ
   IF EXISTS (
     SELECT 1
-    FROM DANGKYHOCPHAN dk
-    JOIN LOPHOCPHAN l1 ON l1.MALHP = dk.MALHP
-    JOIN LOPHOCPHAN l2 ON l2.MALHP = p_malhp
-    WHERE dk.MASV = p_masv
-      AND dk.TRANGTHAI = 'đăng ký'
-      AND l1.MAHK = v_mahk
-      AND l1.THU IS NOT NULL AND l2.THU IS NOT NULL
-      AND l1.THU = l2.THU
-      AND l1.TIETBATDAU < l2.TIETBATDAU + l2.SOTIET
-      AND l2.TIETBATDAU < l1.TIETBATDAU + l1.SOTIET
+      FROM DANGKYHOCPHAN dk
+      JOIN LOPHOCPHAN l1 ON l1.MALHP = dk.MALHP
+      JOIN LOPHOCPHAN l2 ON l2.MALHP = p_malhp
+      WHERE dk.MASV = p_masv
+        AND dk.TRANGTHAI = 'đăng ký'
+        AND l1.MAHK = v_mahk
+        AND l1.THU IS NOT NULL AND l2.THU IS NOT NULL
+        AND l1.THU = l2.THU
+        AND l1.TIETBATDAU < l2.TIETBATDAU + l2.SOTIET
+        AND l2.TIETBATDAU < l1.TIETBATDAU + l1.SOTIET
   ) THEN
-    ROLLBACK;
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Trùng lịch học với lớp học phần đã đăng ký';
   END IF;
 
-  -- Lần học hợp lệ
-  IF p_lanhoc NOT IN ('lần 1', 'học lại', 'cải thiện') THEN
-    ROLLBACK;
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lần học không hợp lệ';
-  END IF;
-
-  -- (4) giới hạn tối đa 25 tín chỉ; mức tối thiểu 12 do API cảnh báo sau khi đăng ký
   SELECT COALESCE(SUM(h.SOTINCHI), 0) INTO v_tinchi_dky
     FROM DANGKYHOCPHAN dk
-    JOIN LOPHOCPHAN l ON l.MALHP = dk.MALHP
-    JOIN HOCPHAN h ON h.MAHP = l.MAHP
+      JOIN LOPHOCPHAN l ON l.MALHP = dk.MALHP
+      JOIN HOCPHAN h ON h.MAHP = l.MAHP
     WHERE dk.MASV = p_masv AND dk.TRANGTHAI = 'đăng ký' AND l.MAHK = v_mahk;
 
-  SELECT SOTINCHI INTO v_tinchi_hp FROM HOCPHAN WHERE MAHP = v_mahp;
+  SELECT 1, SOTINCHI INTO v_hp_found, v_tinchi_hp
+    FROM HOCPHAN WHERE MAHP = v_mahp;
+  IF v_hp_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Học phần không tồn tại';
+  END IF;
 
   IF v_tinchi_dky + v_tinchi_hp > 25 THEN
-    ROLLBACK;
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Vượt giới hạn 25 tín chỉ một học kỳ';
   END IF;
 
-  -- (2) còn chỗ
   SELECT COUNT(*) INTO v_dadangky FROM DANGKYHOCPHAN
     WHERE MALHP = p_malhp AND TRANGTHAI = 'đăng ký';
   IF v_dadangky >= v_sisomax THEN
-    ROLLBACK;
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần đã đầy';
   END IF;
 
@@ -365,30 +388,64 @@ END$$
 -- ===============================================================
 CREATE PROCEDURE sp_huy_dangky(IN p_masv VARCHAR(10), IN p_malhp VARCHAR(15))
 BEGIN
-  DECLARE v_mahk  VARCHAR(20);
-  DECLARE v_bd    DATETIME;
-  DECLARE v_kt    DATETIME;
-  DECLARE v_diem  DECIMAL(4,2);
+  DECLARE v_lhp_found TINYINT DEFAULT 0;
+  DECLARE v_dk_found TINYINT DEFAULT 0;
+  DECLARE v_sv_found TINYINT DEFAULT 0;
+  DECLARE v_lhp_trangthai VARCHAR(10);
+  DECLARE v_sv_trangthai VARCHAR(20);
+  DECLARE v_mahk VARCHAR(20);
+  DECLARE v_bd DATETIME;
+  DECLARE v_kt DATETIME;
+  DECLARE v_diem DECIMAL(4,2);
 
-  SELECT l.MAHK, hk.HANDANGKY_BD, hk.HANDANGKY_KT, dk.DIEMHE10
-    INTO v_mahk, v_bd, v_kt, v_diem
-  FROM DANGKYHOCPHAN dk
-  JOIN LOPHOCPHAN l ON l.MALHP = dk.MALHP
-  JOIN HOCKY hk ON hk.MAHK = l.MAHK
-  WHERE dk.MASV = p_masv AND dk.MALHP = p_malhp AND dk.TRANGTHAI = 'đăng ký';
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
 
-  IF v_mahk IS NULL THEN
+  START TRANSACTION;
+
+  SELECT 1, TRANGTHAI INTO v_lhp_found, v_lhp_trangthai
+    FROM LOPHOCPHAN WHERE MALHP = p_malhp FOR UPDATE;
+  IF v_lhp_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không tồn tại';
+  END IF;
+  IF v_lhp_trangthai <> 'mở' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không mở';
+  END IF;
+
+  SELECT 1 INTO v_dk_found
+    FROM DANGKYHOCPHAN
+    WHERE MASV = p_masv AND MALHP = p_malhp AND TRANGTHAI = 'đăng ký'
+    FOR UPDATE;
+  IF v_dk_found = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Không tìm thấy đăng ký để huỷ';
+  END IF;
+
+  SELECT 1, sv.TRANGTHAI, hk.HANDANGKY_BD, hk.HANDANGKY_KT, dk.DIEMHE10
+    INTO v_sv_found, v_sv_trangthai, v_bd, v_kt, v_diem
+    FROM DANGKYHOCPHAN dk
+      JOIN SINHVIEN sv ON sv.MASV = dk.MASV
+      JOIN HOCKY hk ON hk.MAHK = (SELECT MAHK FROM LOPHOCPHAN WHERE MALHP = dk.MALHP)
+    WHERE dk.MASV = p_masv AND dk.MALHP = p_malhp AND dk.TRANGTHAI = 'đăng ký';
+
+  IF v_sv_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên không tồn tại';
+  END IF;
+  IF v_sv_trangthai <> 'đang học' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên không được huỷ đăng ký';
   END IF;
   IF v_diem IS NOT NULL THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Đã có điểm, không thể huỷ đăng ký';
   END IF;
-  IF NOW() < v_bd OR NOW() > v_kt THEN
+  IF v_bd IS NULL OR v_kt IS NULL OR NOW() < v_bd OR NOW() > v_kt THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Ngoài thời gian được phép huỷ đăng ký';
   END IF;
 
   UPDATE DANGKYHOCPHAN SET TRANGTHAI = 'đã huỷ'
     WHERE MASV = p_masv AND MALHP = p_malhp AND TRANGTHAI = 'đăng ký';
+  COMMIT;
 END$$
 
 -- ===============================================================
@@ -399,30 +456,69 @@ CREATE PROCEDURE sp_nhap_diem(
   IN p_cc DECIMAL(4,2), IN p_gk DECIMAL(4,2), IN p_ck DECIMAL(4,2)
 )
 BEGIN
+  DECLARE v_lhp_found TINYINT DEFAULT 0;
+  DECLARE v_dk_found TINYINT DEFAULT 0;
+  DECLARE v_sv_found TINYINT DEFAULT 0;
+  DECLARE v_hk_found TINYINT DEFAULT 0;
   DECLARE v_mahk VARCHAR(20);
+  DECLARE v_mgv VARCHAR(10);
+  DECLARE v_lhp_trangthai VARCHAR(10);
+  DECLARE v_sv_trangthai VARCHAR(20);
   DECLARE v_khoa TINYINT(1);
 
-  SELECT l.MAHK, hk.KHOADIEM INTO v_mahk, v_khoa
-    FROM LOPHOCPHAN l JOIN HOCKY hk ON hk.MAHK = l.MAHK
-    WHERE l.MALHP = p_malhp;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK;
+    RESIGNAL;
+  END;
 
-  IF v_mahk IS NULL THEN
+  START TRANSACTION;
+
+  SELECT 1, MAGV, MAHK, TRANGTHAI INTO v_lhp_found, v_mgv, v_mahk, v_lhp_trangthai
+    FROM LOPHOCPHAN WHERE MALHP = p_malhp FOR UPDATE;
+  IF v_lhp_found = 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không tồn tại';
+  END IF;
+  IF v_lhp_trangthai <> 'mở' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không mở';
+  END IF;
+
+  SELECT 1, KHOADIEM INTO v_hk_found, v_khoa
+    FROM HOCKY WHERE MAHK = v_mahk;
+  IF v_hk_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Học kỳ không tồn tại';
   END IF;
   IF v_khoa = 1 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Bảng điểm học kỳ đã khoá';
   END IF;
-  IF p_cc NOT BETWEEN 0 AND 10 OR p_gk NOT BETWEEN 0 AND 10 OR p_ck NOT BETWEEN 0 AND 10 THEN
+  IF p_cc IS NULL OR p_gk IS NULL OR p_ck IS NULL
+     OR p_cc NOT BETWEEN 0 AND 10 OR p_gk NOT BETWEEN 0 AND 10 OR p_ck NOT BETWEEN 0 AND 10 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Điểm phải trong khoảng 0–10';
+  END IF;
+
+  SELECT 1 INTO v_dk_found
+    FROM DANGKYHOCPHAN
+    WHERE MASV = p_masv AND MALHP = p_malhp AND TRANGTHAI = 'đăng ký'
+    FOR UPDATE;
+  IF v_dk_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên chưa đăng ký lớp học phần này';
+  END IF;
+
+  SELECT 1, sv.TRANGTHAI INTO v_sv_found, v_sv_trangthai
+    FROM SINHVIEN sv
+    WHERE sv.MASV = p_masv;
+  IF v_sv_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên không tồn tại';
+  END IF;
+  IF v_sv_trangthai <> 'đang học' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên không được nhập điểm';
   END IF;
 
   UPDATE DANGKYHOCPHAN
     SET DIEMCHUYENCAN = p_cc, DIEMGIUAKY = p_gk, DIEMCUOIKY = p_ck
     WHERE MASV = p_masv AND MALHP = p_malhp AND TRANGTHAI = 'đăng ký';
 
-  IF ROW_COUNT() = 0 THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Sinh viên chưa đăng ký lớp học phần này';
-  END IF;
+  COMMIT;
 END$$
 
 DELIMITER ;
@@ -437,26 +533,40 @@ CREATE TRIGGER trg_dangky_before_insert
 BEFORE INSERT ON DANGKYHOCPHAN
 FOR EACH ROW
 BEGIN
+  DECLARE v_lhp_found TINYINT DEFAULT 0;
   DECLARE v_sisomax INT;
+  DECLARE v_lhp_trangthai VARCHAR(10);
   DECLARE v_dadangky INT;
 
-  -- kiểm tra sĩ số (cơ chế số 2 trong mục 3.3)
-  SELECT SISOMAX INTO v_sisomax FROM LOPHOCPHAN WHERE MALHP = NEW.MALHP;
+  SELECT 1, SISOMAX, TRANGTHAI INTO v_lhp_found, v_sisomax, v_lhp_trangthai
+    FROM LOPHOCPHAN WHERE MALHP = NEW.MALHP FOR UPDATE;
+  IF v_lhp_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không tồn tại (trigger)';
+  END IF;
+  IF v_lhp_trangthai <> 'mở' THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần không mở (trigger)';
+  END IF;
+
   SELECT COUNT(*) INTO v_dadangky FROM DANGKYHOCPHAN
     WHERE MALHP = NEW.MALHP AND TRANGTHAI = 'đăng ký';
   IF v_dadangky >= v_sisomax THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp học phần đã đầy (trigger)';
   END IF;
 
-  -- tự tính điểm nếu nhập 3 cột thành phần (cơ chế tự tính điểm chữ)
-  IF NEW.DIEMCUOIKY IS NOT NULL THEN
+  IF NEW.DIEMCHUYENCAN IS NOT NULL
+     AND NEW.DIEMGIUAKY IS NOT NULL
+     AND NEW.DIEMCUOIKY IS NOT NULL THEN
     SET NEW.DIEMHE10 = ROUND(
-      COALESCE(NEW.DIEMCHUYENCAN,0)*0.1 + COALESCE(NEW.DIEMGIUAKY,0)*0.3 + NEW.DIEMCUOIKY*0.6, 2);
+      NEW.DIEMCHUYENCAN*0.1 + NEW.DIEMGIUAKY*0.3 + NEW.DIEMCUOIKY*0.6, 2);
     SET NEW.DIEMCHU  = fn_diem_chu(NEW.DIEMHE10);
     SET NEW.DIEMHE4  = CASE NEW.DIEMCHU
       WHEN 'A' THEN 4.00 WHEN 'B+' THEN 3.50 WHEN 'B' THEN 3.00
       WHEN 'C+' THEN 2.50 WHEN 'C' THEN 2.00 WHEN 'D+' THEN 1.50
       WHEN 'D' THEN 1.00 ELSE 0.00 END;
+  ELSE
+    SET NEW.DIEMHE10 = NULL;
+    SET NEW.DIEMCHU = NULL;
+    SET NEW.DIEMHE4 = NULL;
   END IF;
 END$$
 
@@ -467,12 +577,20 @@ CREATE TRIGGER trg_dangky_before_update
 BEFORE UPDATE ON DANGKYHOCPHAN
 FOR EACH ROW
 BEGIN
+  DECLARE v_khoa_found TINYINT DEFAULT 0;
   DECLARE v_khoa TINYINT(1);
-  SELECT hk.KHOADIEM INTO v_khoa
-    FROM DANGKYHOCPHAN dk
-    JOIN LOPHOCPHAN l ON l.MALHP = dk.MALHP
-    JOIN HOCKY hk ON hk.MAHK = l.MAHK
-    WHERE dk.MASV = NEW.MASV AND dk.MALHP = NEW.MALHP;
+
+  -- Không đọc DANGKYHOCPHAN ở đây: SELECT ... FOR UPDATE trên chính bảng
+  -- đang UPDATE sẽ lỗi 1442. Tra MAHK qua NEW.MALHP là đủ (row đang bị UPDATE
+  -- nên chắc chắn tồn tại; FK đảm bảo LOPHOCPHAN tồn tại).
+  SELECT 1, hk.KHOADIEM INTO v_khoa_found, v_khoa
+    FROM LOPHOCPHAN l
+      JOIN HOCKY hk ON hk.MAHK = l.MAHK
+    WHERE l.MALHP = NEW.MALHP;
+
+  IF v_khoa_found = 0 THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Đăng ký không tồn tại (trigger)';
+  END IF;
 
   IF v_khoa = 1 AND NOT (OLD.DIEMCHUYENCAN <=> NEW.DIEMCHUYENCAN
                      AND OLD.DIEMGIUAKY   <=> NEW.DIEMGIUAKY
@@ -480,14 +598,24 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Bảng điểm học kỳ đã khoá, không thể sửa điểm';
   END IF;
 
-  IF NEW.DIEMCUOIKY IS NOT NULL THEN
-    SET NEW.DIEMHE10 = ROUND(
-      COALESCE(NEW.DIEMCHUYENCAN,0)*0.10 + COALESCE(NEW.DIEMGIUAKY,0)*0.30 + NEW.DIEMCUOIKY*0.60, 2);
-    SET NEW.DIEMCHU  = fn_diem_chu(NEW.DIEMHE10);
-    SET NEW.DIEMHE4  = CASE NEW.DIEMCHU
-      WHEN 'A' THEN 4.00 WHEN 'B+' THEN 3.50 WHEN 'B' THEN 3.00
-      WHEN 'C+' THEN 2.50 WHEN 'C' THEN 2.00 WHEN 'D+' THEN 1.50
-      WHEN 'D' THEN 1.00 ELSE 0.00 END;
+  IF NOT (OLD.DIEMCHUYENCAN <=> NEW.DIEMCHUYENCAN
+      AND OLD.DIEMGIUAKY   <=> NEW.DIEMGIUAKY
+      AND OLD.DIEMCUOIKY   <=> NEW.DIEMCUOIKY) THEN
+    IF NEW.DIEMCHUYENCAN IS NOT NULL
+       AND NEW.DIEMGIUAKY IS NOT NULL
+       AND NEW.DIEMCUOIKY IS NOT NULL THEN
+      SET NEW.DIEMHE10 = ROUND(
+        NEW.DIEMCHUYENCAN*0.10 + NEW.DIEMGIUAKY*0.30 + NEW.DIEMCUOIKY*0.60, 2);
+      SET NEW.DIEMCHU  = fn_diem_chu(NEW.DIEMHE10);
+      SET NEW.DIEMHE4  = CASE NEW.DIEMCHU
+        WHEN 'A' THEN 4.00 WHEN 'B+' THEN 3.50 WHEN 'B' THEN 3.00
+        WHEN 'C+' THEN 2.50 WHEN 'C' THEN 2.00 WHEN 'D+' THEN 1.50
+        WHEN 'D' THEN 1.00 ELSE 0.00 END;
+    ELSE
+      SET NEW.DIEMHE10 = NULL;
+      SET NEW.DIEMCHU = NULL;
+      SET NEW.DIEMHE4 = NULL;
+    END IF;
   END IF;
 END$$
 
@@ -504,8 +632,9 @@ SELECT l.MALHP, h.MAHP, h.TENHP, h.SOTINCHI, l.MAHK, l.MAGV,
        (l.SISOMAX - (SELECT COUNT(*) FROM DANGKYHOCPHAN dk
          WHERE dk.MALHP = l.MALHP AND dk.TRANGTHAI = 'đăng ký')) AS CONCHO
 FROM LOPHOCPHAN l
-JOIN HOCPHAN h ON h.MAHP = l.MAHP
-JOIN GIANGVIEN g ON g.MAGV = l.MAGV;
+  JOIN HOCPHAN h ON h.MAHP = l.MAHP
+  JOIN GIANGVIEN g ON g.MAGV = l.MAGV
+WHERE l.TRANGTHAI = 'mở';
 
 CREATE VIEW v_bangdiem_sinhvien AS
 SELECT dk.MASV, sv.HOTEN AS HOTEN_SV, l.MALHP, h.MAHP, h.TENHP, h.SOTINCHI,

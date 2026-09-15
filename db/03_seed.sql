@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Dữ liệu mẫu — chạy SAU 01_schema.sql
 -- Ngày lấy theo NOW()/CURDATE() nên học kỳ "hiện tại" luôn mở đăng ký.
--- Mật khẩu tất cả tài khoản: 123456 (bcrypt hash chèn ở chỗ $2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu)
+-- Mật khẩu tất cả tài khoản: 123456 (bcrypt hash đã verify bằng bcryptjs.compareSync)
 -- =====================================================================
 USE qlhocphan;
 
@@ -59,10 +59,12 @@ INSERT INTO HOCKY (MAHK, NAMHOC, HOCKYTHU, NGAYBATDAU, NGAYKETTHUC, HANDANGKY_BD
  NOW() - INTERVAL 3 DAY, NOW() + INTERVAL 14 DAY, 0);
 
 -- ---------- LOPHOCPHAN (kỳ cũ — có điểm, đã khoá) ----------
+-- Tạm insert TRANGTHAI='mở' vì trigger trg_dangky_before_insert chặn đăng ký
+-- vào lớp 'đóng'; sẽ UPDATE về 'đóng' sau khi seed xong phần đăng ký cũ.
 INSERT INTO LOPHOCPHAN (MALHP, MAHP, MAHK, MAGV, SISOMAX, PHONGHOC, THU, TIETBATDAU, SOTIET, TRANGTHAI) VALUES
-('LHP9001', 'IT1010', '2024-2025-HK2', 'GV01', 60, 'D3-201', 2, 1, 3, 'đóng'),
-('LHP9002', 'IT1020', '2024-2025-HK2', 'GV02', 60, 'D3-202', 3, 1, 3, 'đóng'),
-('LHP9003', 'IT2100', '2024-2025-HK2', 'GV03', 60, 'D4-101', 4, 1, 3, 'đóng');
+('LHP9001', 'IT1010', '2024-2025-HK2', 'GV01', 60, 'D3-201', 2, 1, 3, 'mở'),
+('LHP9002', 'IT1020', '2024-2025-HK2', 'GV02', 60, 'D3-202', 3, 1, 3, 'mở'),
+('LHP9003', 'IT2100', '2024-2025-HK2', 'GV03', 60, 'D4-101', 4, 1, 3, 'mở');
 
 -- ---------- LOPHOCPHAN (kỳ hiện tại) ----------
 -- LHP0101: sĩ số tối đa 2 (để demo lỗi "lớp đã đầy")
@@ -89,6 +91,9 @@ INSERT INTO DANGKYHOCPHAN (MASV, MALHP, LANHOC, DIEMCHUYENCAN, DIEMGIUAKY, DIEMC
 ('SV006', 'LHP9001', 'lần 1', 4.0, 4.0, 4.0, 'đăng ký'),   -- đạt D, học lại được
 ('SV006', 'LHP9002', 'lần 1', 2.0, 3.0, 3.5, 'đăng ký');   -- trượt IT1020
 
+-- Đóng lại các lớp học kỳ cũ sau khi seed xong đăng ký cũ
+UPDATE LOPHOCPHAN SET TRANGTHAI = 'đóng' WHERE MALHP IN ('LHP9001', 'LHP9002', 'LHP9003');
+
 -- ---------- DANGKYHOCPHAN (kỳ hiện tại, chưa có điểm) ----------
 INSERT INTO DANGKYHOCPHAN (MASV, MALHP, LANHOC, TRANGTHAI) VALUES
 ('SV001', 'LHP0301', 'lần 1',    'đăng ký'),
@@ -102,14 +107,14 @@ INSERT INTO DANGKYHOCPHAN (MASV, MALHP, LANHOC, TRANGTHAI) VALUES
 
 -- ---------- TAIKHOAN (mật khẩu tất cả: 123456) ----------
 INSERT INTO TAIKHOAN (TENDANGNHAP, MATKHAU_HASH, VAITRO, MASV, MAGV) VALUES
-('admin',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'admin',     NULL,   NULL),
-('sv001',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'sinhvien',  'SV001', NULL),
-('sv002',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'sinhvien',  'SV002', NULL),
-('sv003',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'sinhvien',  'SV003', NULL),
-('sv004',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'sinhvien',  'SV004', NULL),
-('sv005',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'sinhvien',  'SV005', NULL),
-('sv006',  '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'sinhvien',  'SV006', NULL),
-('gv01',   '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'giangvien', NULL,   'GV01'),
-('gv02',   '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'giangvien', NULL,   'GV02'),
-('gv03',   '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'giangvien', NULL,   'GV03'),
-('gv04',   '$2b$10$i6DDHYzyU1ZUEl20POss4.meEcDItpMZ39MHYntEypzjecHotyBuu', 'giangvien', NULL,   'GV04');
+('admin',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'admin',     NULL,   NULL),
+('sv001',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'sinhvien',  'SV001', NULL),
+('sv002',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'sinhvien',  'SV002', NULL),
+('sv003',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'sinhvien',  'SV003', NULL),
+('sv004',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'sinhvien',  'SV004', NULL),
+('sv005',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'sinhvien',  'SV005', NULL),
+('sv006',  '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'sinhvien',  'SV006', NULL),
+('gv01',   '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'giangvien', NULL,   'GV01'),
+('gv02',   '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'giangvien', NULL,   'GV02'),
+('gv03',   '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'giangvien', NULL,   'GV03'),
+('gv04',   '$2b$10$BMLCRQT40UYzFmhI5qNuKeK4OHs8p.610xyojuAGdMevyc5afX6GG', 'giangvien', NULL,   'GV04');
