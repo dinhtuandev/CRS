@@ -1,110 +1,110 @@
 -- =====================================================================
--- DEMO 5: DEADLOCK (khoá vòng) → khắc phục bằng THỨ TỰ KHOÁ + RETRY
--- Gõ theo BƯỚC xen kẽ giữa SESSION A và SESSION B — thực hiện NHANH
--- ở bước 3-4 để hai transaction kịp giữ khoá chéo nhau.
+-- DEMO 5: DEADLOCK — khoá chéo 2 lớp → ERROR 1213, và 3 cách khắc phục
+-- NGAY TRÊN DB DỰ ÁN: 2 cán bộ điều chỉnh sĩ số 2 lớp LHP0101 và LHP0102
+-- theo thứ tự NGƯỢC NHAU → chu trình chờ → deadlock.
+--
+-- Vì sao ±1 chỗ/lớp: LHP0101 chỉ có sĩ số 2 và DB có CHECK SISOMAX > 0 —
+-- chỉnh nhiều hơn sẽ vấp CHECK trước khi kịp tạo deadlock.
+--
 -- Tài liệu: docs/demo-concurrency.md
 -- =====================================================================
 
+-- [CẢ HAI SESSION] Đảm bảo giá trị gốc:
+--   UPDATE LOPHOCPHAN SET SISOMAX = 2  WHERE MALHP='LHP0101';
+--   UPDATE LOPHOCPHAN SET SISOMAX = 60 WHERE MALHP='LHP0102';
+
 -- #####################################################################
--- PHẦN A: GÂY LỖI (hai transaction khoá 2 hàng theo thứ tự NGƯỢC nhau)
+-- PHẦN A — GÂY LỖI: 2 transaction khoá chéo 2 hàng
 -- #####################################################################
 
--- (A1) SESSION A
+-- BƯỚC 1 — SESSION A (tăng LHP0101 1 chỗ, bù bằng LHP0102):
 START TRANSACTION;
-UPDATE counter SET value = value + 10 WHERE id = 1;   -- A giữ X-lock hàng 1
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX + 1 WHERE MALHP = 'LHP0101';
+-- A giữ khoá hàng LHP0101
 
--- (A2) SESSION B
+-- BƯỚC 2 — SESSION B (ngược chiều: tăng LHP0102, bù bằng LHP0101):
 START TRANSACTION;
-UPDATE counter SET value = value + 10 WHERE id = 2;   -- B giữ X-lock hàng 2
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX + 1 WHERE MALHP = 'LHP0102';
+-- B giữ khoá hàng LHP0102 (chưa xung đột với A — YET)
 
--- (A3) SESSION A — muốn hàng 2 mà B đang giữ (chưa gõ, để B gõ A4 trước)
-UPDATE counter SET value = value + 10 WHERE id = 2;   -- A BLOCK (chờ B)
+-- BƯỚC 3 — SESSION A: với tới hàng thứ hai
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX - 1 WHERE MALHP = 'LHP0102';
+-- ⏳ A ĐỢI khoá LHP0102 do B giữ
 
--- (A4) SESSION B — muốn hàng 1 mà A đang giữ => VÒNG CHỜ!
-UPDATE counter SET value = value + 10 WHERE id = 1;
--- => InnoDB lập tức chọn một NẠN NHÂN (thường là B) và rollback:
---    ERROR 1213 (40001): Deadlock found when trying to get lock;
---    try restarting transaction
--- Session còn lại (A) vẫn giữ khoá và chạy bình thường.
+-- BƯỚC 4 — SESSION B: với tới hàng thứ nhất
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX - 1 WHERE MALHP = 'LHP0101';
+-- 💥 InnoDB phát hiện chu trình chờ (A đợi B, B đợi A) — ngay lập tức:
+--   ERROR 1213 (40001): Deadlock found when trying to get lock;
+--   try restarting transaction
+-- InnoDB TỰ CHỌN một transaction làm "nạn nhân": ROLLBACK toàn bộ,
+-- nhả khoá — phiên kia chạy tiếp được.
 
--- (A5) SESSION A — kết thúc transaction đang treo
+-- BƯỚC 5 — SESSION A (phiên sống sót): COMMIT
 COMMIT;
 
--- Xem thông tin deadlock gần nhất (chạy trong session bất kỳ):
+-- KIỂM CHỨNG (session bất kỳ):
+--   SELECT MALHP, SISOMAX FROM LOPHOCPHAN WHERE MALHP IN ('LHP0101','LHP0102');
+-- --> nạn nhân bị ROLLBACK: chỉnh của nó biến mất; phiên kia +1/-1 đủ cặp.
+-- Xem dấu tích deadlock trong InnoDB:
 --   SHOW ENGINE INNODB STATUS\G   (mục LATEST DETECTED DEADLOCK)
 
--- Reset: UPDATE counter SET value = 100 WHERE id IN (1, 2);
-
 -- #####################################################################
--- PHẦN B: KHẮC PHỤC 1 — CẢ HAI transaction khoá theo CÙNG THỨ TỰ
--- (luôn hàng 1 trước, hàng 2 sau) => không thể tạo chu trình.
+-- PHẦN B — KHẮC PHỤC 1: khoá theo CÙNG THỨ TỰ (lock ordering)
+-- Quy ước dự án: LUÔN chạm lớp có MALHP nhỏ hơn trước.
 -- #####################################################################
 
--- (B1) SESSION A
+-- [SESSION A]
 START TRANSACTION;
-UPDATE counter SET value = value + 10 WHERE id = 1;   -- A giữ hàng 1
-
--- (B2) SESSION B — cũng khoá hàng 1 TRƯỚC (chứ không phải hàng 2)
-START TRANSACTION;
-UPDATE counter SET value = value + 10 WHERE id = 1;   -- B BLOCK chờ A (chỉ chờ 1 chiều)
-
--- (B3) SESSION A
-UPDATE counter SET value = value + 10 WHERE id = 2;   -- A lấy hàng 2 KHÔNG bị chặn
-COMMIT;                                               -- A nhả cả 2 khoá
-
--- (B4) SESSION B — B2 chạy xong; tiếp tục theo đúng thứ tự
-UPDATE counter SET value = value + 10 WHERE id = 2;
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX + 1 WHERE MALHP = 'LHP0101'; -- 'LHP0101' < 'LHP0102'
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX - 1 WHERE MALHP = 'LHP0102';
 COMMIT;
--- Không bao giờ deadlock vì thứ tự khoá toàn cục 1 -> 2 là như nhau ✅
 
--- Reset: UPDATE counter SET value = 100 WHERE id IN (1, 2);
+-- [SESSION B] — DÙ phiếu ngược chiều, vẫn chạm LHP0101 TRƯỚC:
+START TRANSACTION;
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX - 1 WHERE MALHP = 'LHP0101'; -- khoá TRƯỚC dù sửa sau
+UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX + 1 WHERE MALHP = 'LHP0102';
+COMMIT;
+-- ✅ Không deadlock: B chỉ ĐỢI A ở hàng đầu tiên, rồi chạy tiếp tuần tự.
 
 -- #####################################################################
--- PHẦN C: KHẮC PHỤC 2 — RETRY khi trúng deadlock (1213)
--- InnoDB đã rollback NẠN NHÂN một cách đầy đủ (atomic) nên việc
--- CHẠY LẠI TOÀN BỘ transaction là an toàn.
--- Mô phỏng bằng SQL: thủ tục sp_demo_deadlock_retry thử tối đa 3 lần.
+-- PHẦN C — KHẮC PHỤC 2: STORED PROCEDURE TỰ RETRY khi dính 1213
+-- (mô hình API đang dùng: sinhvien.js retry 3 lần khi errno = 1213)
 -- #####################################################################
 
--- (C1) SESSION A — tạo thủ tục retry (gõ 1 lần)
+DROP PROCEDURE IF EXISTS sp_demo_deadlock_retry;
 DELIMITER $$
 CREATE PROCEDURE sp_demo_deadlock_retry()
 BEGIN
   DECLARE attempts INT DEFAULT 0;
-  retry_loop: LOOP
+  demo_loop: LOOP
     SET attempts = attempts + 1;
     BEGIN
       DECLARE EXIT HANDLER FOR 1213
       BEGIN
+        -- InnoDB đã tự rollback transaction dính deadlock
         IF attempts >= 3 THEN
-          RESIGNAL;                       -- hết lượt: trả lỗi ra ngoài
+          RESIGNAL;  -- hết lượt, ném lỗi cho caller
         END IF;
-        -- trúng deadlock: handler tự ROLLBACK, rơi xuống để thử lại
       END;
       START TRANSACTION;
-      UPDATE counter SET value = value + 10 WHERE id = 2;   -- (đổi thứ tự 2->1 để cố tình trúng)
-      UPDATE counter SET value = value + 10 WHERE id = 1;
+      UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX + 1 WHERE MALHP = 'LHP0101';
+      UPDATE LOPHOCPHAN SET SISOMAX = SISOMAX - 1 WHERE MALHP = 'LHP0102';
       COMMIT;
-      LEAVE retry_loop;                   -- thành công: thoát vòng
+      LEAVE demo_loop;   -- thành công
     END;
   END LOOP;
 END$$
 DELIMITER ;
 
--- (C2) SESSION A — thử gọi khi hệ thống rảnh
+-- Chạy procedure — nếu dính deadlock sẽ tự thử lại tối đa 3 lần:
 CALL sp_demo_deadlock_retry();
-SELECT value FROM counter WHERE id IN (1, 2);   -- +10 cả hai hàng ✅
+-- --> Query OK (đã retry ngầm nếu có 1213)
 
--- (C3) Nuôi deadlock thật để thấy retry có tác dụng: mở SESSION B chạy:
---   START TRANSACTION;
---   UPDATE counter SET value = value + 10 WHERE id = 1;
---   -- giữ nguyên, chưa commit...
--- rồi ở SESSION A gọi CALL sp_demo_deadlock_retry(); trong lúc B vẫn giữ
--- hàng 1 -> nếu InnoDB chọn A làm nạn nhân, thủ tục tự thử lại tới khi OK.
--- (Cuối cùng nhớ COMMIT/ROLLBACK ở SESSION B.)
---
--- Reset: UPDATE counter SET value = 100 WHERE id IN (1, 2);
--- Dọn:   DROP PROCEDURE sp_demo_deadlock_retry;
---
--- Trong đề tài này: server/routes/sinhvien.js retry 3 lần (kèm backoff)
--- khi gọi sp_dangky_hocphan trúng errno 1213 — đúng kỹ thuật này.
+-- Sau demo, xoá procedure mẫu:
+DROP PROCEDURE IF EXISTS sp_demo_deadlock_retry;
+
+-- #####################################################################
+-- RESET sau demo (chạy lại db/demo/demo.sql hoặc):
+--   UPDATE LOPHOCPHAN SET SISOMAX = 2  WHERE MALHP='LHP0101';
+--   UPDATE LOPHOCPHAN SET SISOMAX = 60 WHERE MALHP='LHP0102';
+-- =====================================================================

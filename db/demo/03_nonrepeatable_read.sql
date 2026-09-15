@@ -1,57 +1,64 @@
 -- =====================================================================
--- DEMO 3: NON-REPEATABLE READ (đọc không lặp lại) → khắc phục bằng
---         REPEATABLE READ (snapshot MVCC, mặc định của InnoDB)
--- Gõ theo BƯỚC xen kẽ giữa SESSION A và SESSION B.
+-- DEMO 3: NON-REPEATABLE READ — cùng 1 transaction đọc 2 lần, giá trị đổi
+-- NGAY TRÊN DB DỰ ÁN: B tính học phí dựa trên sĩ số LHP0102 đọc 2 lần,
+-- giữa 2 lần đọc A cập nhật sĩ số + commit → 2 lần đọc khác nhau.
+--
+-- Mặc định MySQL = REPEATABLE READ: demo này PHẢI SET READ COMMITTED.
+--
 -- Tài liệu: docs/demo-concurrency.md
 -- =====================================================================
 
 -- #####################################################################
--- PHẦN A: GÂY LỖI (READ COMMITTED — mỗi SELECT thấy dữ liệu mới nhất)
--- Tình huống: giảng viên tính điểm tổng kết đọc 2 lần trong cùng 1
--- transaction; giữa 2 lần, một điểm bị sửa + commit => 2 kết quả lệch.
+-- PHẦN A — GÂY LỖI: READ COMMITTED cho phép non-repeatable read
 -- #####################################################################
 
--- (A1) SESSION B
+-- [SESSION B]
 SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
 START TRANSACTION;
-SELECT value FROM counter WHERE id = 1;   -- Kết quả: 100 (lần 1)
 
--- (A2) SESSION A — sửa và commit
-UPDATE counter SET value = 200 WHERE id = 1;
+-- BƯỚC 1 — SESSION B: lần đọc thứ nhất
+SELECT SISOMAX AS 'lan 1' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 60
+
+-- BƯỚC 2 — SESSION A: cập nhật + commit
+START TRANSACTION;
+UPDATE LOPHOCPHAN SET SISOMAX = 55 WHERE MALHP = 'LHP0102';
 COMMIT;
 
--- (A3) SESSION B — đọc lại TRONG CÙNG transaction
-SELECT value FROM counter WHERE id = 1;   -- Kết quả: 200 ❌ (đổi giữa chừng!)
--- => Cùng 1 transaction, cùng 1 hàng, 2 giá trị khác nhau
---    => phép tính tổng/luỹ tiến dùng 2 kết quả này sẽ sai lệch
+-- BƯỚC 3 — SESSION B: lần đọc thứ hai — TRONG CÙNG transaction cũ
+SELECT SISOMAX AS 'lan 2' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 55  ❌ khác lần 1! Non-repeatable read.
+
+-- BƯỚC 4 — SESSION B: kết thúc
 COMMIT;
 
--- Reset: UPDATE counter SET value = 100 WHERE id = 1;
-
 -- #####################################################################
--- PHẦN B: KHẮC PHỤC — REPEATABLE READ (snapshot nhất quán từ lần đọc đầu)
+-- PHẦN B — KHẮC PHỤC: REPEATABLE READ (mặc định của MySQL) chụp snapshot
 -- #####################################################################
 
--- (B1) SESSION B — trở về mức mặc định của InnoDB
+-- [SESSION B]
 SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
 START TRANSACTION;
-SELECT value FROM counter WHERE id = 1;   -- 100 (snapshot chụp từ đây)
 
--- (B2) SESSION A — sửa và commit
-UPDATE counter SET value = 200 WHERE id = 1;
-COMMIT;
+SELECT SISOMAX AS 'lan 1' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 55
 
--- (B3) SESSION B — đọc lại trong CÙNG transaction cũ
-SELECT value FROM counter WHERE id = 1;   -- VẪN 100 ✅ (đọc từ snapshot, không lộn xộn)
-COMMIT;                                   -- commit xong thì lần đọc SAU mới thấy 200
-
--- (B4) SESSION B — kiểm chứng: sau commit, transaction mới thấy giá trị mới
+-- [SESSION A]
 START TRANSACTION;
-SELECT value FROM counter WHERE id = 1;   -- 200 ✅
+UPDATE LOPHOCPHAN SET SISOMAX = 50 WHERE MALHP = 'LHP0102';
 COMMIT;
 
--- Reset: UPDATE counter SET value = 100 WHERE id = 1;
---
--- Ghi chú trình bày: REPEATABLE READ chỉ bảo đảm kết quả LẶP LẠI cho
--- ĐỌC THUẦN. Nếu nghiệp vụ cần tính trên dữ liệu MỚI NHẤT một cách
--- nhất quán (ví dụ tổng tiền), thêm khoá: SELECT ... FOR UPDATE / FOR SHARE.
+-- [SESSION B]
+SELECT SISOMAX AS 'lan 2' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 55  ✅ vẫn 55! REPEATABLE READ chụp snapshot khi START TRANSACTION
+COMMIT;
+
+-- [SESSION B] Sau commit, đọc tiếp sẽ thấy giá trị mới:
+SELECT SISOMAX AS 'sau commit' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 50  — snapshot chỉ tồn tại trong transaction
+
+-- #####################################################################
+-- RESET sau demo:
+--   UPDATE LOPHOCPHAN SET SISOMAX = 60 WHERE MALHP='LHP0102';
+-- (hoặc chạy lại db/demo/demo.sql)
+-- =====================================================================

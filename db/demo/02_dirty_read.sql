@@ -1,61 +1,67 @@
 -- =====================================================================
--- DEMO 2: DIRTY READ (đọc bẩn) → khắc phục bằng READ COMMITTED
--- Gõ theo BƯỚC xen kẽ giữa SESSION A và SESSION B.
+-- DEMO 2: DIRTY READ — đọc dữ liệu chưa commit
+-- NGAY TRÊN DB DỰ ÁN: A đổi phòng học LHP0101 sang D3-205 rồi ROLLBACK —
+-- B (READ UNCOMMITTED) đã "thấy" phòng D3-205 chưa từng tồn tại.
+--
+-- LƯU Ý: MySQL mặc định REPEATABLE READ — dirty read KHÔNG xảy ra.
+-- Phải chủ động SET isolation ở Session B (đây chính là nội dung dạy).
+--
 -- Tài liệu: docs/demo-concurrency.md
 -- =====================================================================
 
--- #####################################################################
--- PHẦN A: GÂY LỖI (READ UNCOMMITTED — đọc được dữ liệu CHƯA commit)
--- Tình huống: phòng đào tạo cộng điểm +30 nhưng chưa chốt; giảng viên
--- đọc thấy số "bẩn" và ra quyết định dựa trên dữ liệu chưa tồn tại.
--- #####################################################################
-
--- (A1) SESSION B — hạ mức cô lập thấp nhất để đọc bẩn
+-- [SESSION B] Đặt mức cô lập yếu nhất:
 SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 START TRANSACTION;
-SELECT value FROM counter WHERE id = 1;   -- 100 (giá trị sạch ban đầu)
 
--- (A2) SESSION A — sửa nhưng CHƯA commit
+-- BƯỚC 0 — SESSION B: xem phòng học gốc
+SELECT MALHP, PHONGHOC FROM LOPHOCPHAN WHERE MALHP = 'LHP0101';
+-- --> D3-201
+
+-- [SESSION A] Bắt đầu transaction, đổi phòng học NHƯNG CHỨA COMMIT:
 START TRANSACTION;
-UPDATE counter SET value = value + 30 WHERE id = 1;
--- ... không gõ COMMIT ở đây!
+UPDATE LOPHOCPHAN SET PHONGHOC = 'D3-205' WHERE MALHP = 'LHP0101';
 
--- (A3) SESSION B — đọc lại
-SELECT value FROM counter WHERE id = 1;   -- Kết quả: 130 ❌ (chưa commit mà đã thấy!)
--- => B cho rằng SV có thêm 30 điểm -> quyết định sai trên dữ liệu "ảo"
+-- BƯỚC 1 — SESSION B: đọc phòng học
+SELECT MALHP, PHONGHOC FROM LOPHOCPHAN WHERE MALHP = 'LHP0101';
+-- --> D3-205  ❌ B thấy dữ liệu A CHƯA COMMIT = DIRTY READ
+-- (B xuất thông báo "lớp chuyển sang D3-205" cho sinh viên — sai sự thật!)
 
--- (A4) SESSION A — thu hồi thao tác
+-- BƯỚC 2 — SESSION A: HỦY thao tác
 ROLLBACK;
+-- A chỉ là gõ nhầm / phát hiện lớp phải giữ nguyên phòng.
 
--- (A5) SESSION B — đọc lại lần nữa
-SELECT value FROM counter WHERE id = 1;   -- 100 — con số 130 vừa rồi không từng tồn tại
+-- BƯỚC 3 — SESSION B: đọc lại
+SELECT MALHP, PHONGHOC FROM LOPHOCPHAN WHERE MALHP = 'LHP0101';
+-- --> D3-201  — con số D3-205 mà B đã dùng KHÔNG TỒN TẠI trong DB.
+-- COMMIT phiên B:
 COMMIT;
 
--- Reset: UPDATE counter SET value = 100 WHERE id = 1;
+-- KẾT LUẬN: dirty read = quyết định dựa trên dữ liệu "ảo".
+-- MySQL mặc định REPEATABLE READ nên không bao giờ xảy ra với dự án này;
+-- demo này chứng minh VÌ SAO không ai được bật READ UNCOMMITTED.
 
--- #####################################################################
--- PHẦN B: KHẮC PHỤC — READ COMMITTED (chỉ đọc dữ liệu đã commit)
--- #####################################################################
-
--- (B1) SESSION B
+-- ---------------------------------------------------------------------
+-- KHẮC PHỤC — READ COMMITTED trở lên không bao giờ thấy dữ liệu chưa commit
+-- ---------------------------------------------------------------------
+-- [SESSION B]
 SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
 START TRANSACTION;
-SELECT value FROM counter WHERE id = 1;   -- 100
 
--- (B2) SESSION A
+-- [SESSION A]
 START TRANSACTION;
-UPDATE counter SET value = value + 30 WHERE id = 1;
+UPDATE LOPHOCPHAN SET PHONGHOC = 'D3-205' WHERE MALHP = 'LHP0101';
 
--- (B3) SESSION B — đọc lại: vẫn 100, KHÔNG thấy dữ liệu chưa commit
-SELECT value FROM counter WHERE id = 1;   -- 100 ✅ (đang bị chặn thấy bản ghi cũ qua MVCC)
+-- [SESSION B]
+SELECT MALHP, PHONGHOC FROM LOPHOCPHAN WHERE MALHP = 'LHP0101';
+-- --> D3-201  ✅ vẫn dữ liệu đã commit
 
--- (B4) SESSION A
+-- [SESSION A]
+ROLLBACK;
+
+-- [SESSION B]
+SELECT MALHP, PHONGHOC FROM LOPHOCPHAN WHERE MALHP = 'LHP0101';
+-- --> D3-201  ✅ nhất quán
 COMMIT;
 
--- (B5) SESSION B — giờ mới thấy giá trị mới
-SELECT value FROM counter WHERE id = 1;   -- 130 ✅ (đã commit, đọc được là hợp lệ)
-COMMIT;
-
--- Reset: UPDATE counter SET value = 100 WHERE id = 1;
--- Ghi chú: InnoDB mặc định là REPEATABLE READ (cao hơn READ COMMITTED),
--- nên dirty read KHÔNG THỂ xảy ra trừ khi chủ động hạ xuống READ UNCOMMITTED.
+-- RESET: phòng học không bao giờ đổi — không cần reset gì thêm.
+-- =====================================================================

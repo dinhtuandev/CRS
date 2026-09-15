@@ -1,60 +1,89 @@
 -- =====================================================================
--- DEMO 1: LOST UPDATE (cập nhật mất) → khắc phục bằng FOR UPDATE
+-- DEMO 1: LOST UPDATE — cập nhật mất → khắc phục bằng SELECT ... FOR UPDATE
+-- NGAY TRÊN DB DỰ ÁN: 2 phòng đào tạo cùng giảm sĩ số LHP0102 từ 60 → 59
+-- (tình huống thật: 2 cán bộ cùng xử lý 2 phiếu giảm sĩ số, mỗi phiếu -1)
+--
+-- QUAN TRỌNG: phép UPDATE phải ghi GIÁ TRỊ TUYỆT ĐỐI tính từ lần ĐỌC
+-- (SET SISOMAX = 59, tức 60-1) — như ứng dụng thật đọc rồi ghi lại.
+-- Nếu ghi tương đối (SET SISOMAX = SISOMAX - 1) thì KHÔNG bao giờ mất
+-- cập nhật — bản thân đây cũng là bài học: cách ghi quyết định lỗi.
+--
 -- Mở 2 session:
---   docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhp_demo
+--   docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhocphan
 -- Gõ theo BƯỚC (1..5) xen kẽ giữa SESSION A và SESSION B.
 -- Tài liệu: docs/demo-concurrency.md
 -- =====================================================================
 
 -- #####################################################################
--- PHẦN A: GÂY LỖI (READ COMMITTED — đọc xong nhả khoá, không giữ tới commit)
+-- PHẦN A — GÂY LỖI: cả 2 session READ COMMITTED, đọc không khoá
 -- #####################################################################
 
--- (A1) SESSION A — chuẩn bị
+-- [CẢ HAI SESSION]
 SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+
+-- BƯỚC 1 — SESSION A: đọc sĩ số (không khoá) và tính phiếu của mình
 START TRANSACTION;
-SELECT value FROM counter WHERE id = 1;   -- Kết quả: 100
+SELECT SISOMAX AS 'A doc duoc' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 60  (A tính: 60 - 1 phiếu = 59)
 
--- (A2) SESSION B — cộng +1 và commit
+-- BƯỚC 2 — SESSION B: cũng đọc sĩ số và tính phiếu của mình
 START TRANSACTION;
-UPDATE counter SET value = value + 1 WHERE id = 1;
+SELECT SISOMAX AS 'B doc duoc' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102';
+-- --> 60  (B cũng tính: 60 - 1 phiếu = 59)
+
+-- BƯỚC 3 — SESSION A: ghi KẾT QUẢ TÍNH TOÁN của mình (59 = 60 đọc được - 1)
+UPDATE LOPHOCPHAN SET SISOMAX = 59 WHERE MALHP = 'LHP0102';
+-- Query OK. Chưa commit → A đang giữ khoá hàng LHP0102.
+
+-- BƯỚC 4 — SESSION B: ghi kết quả của mình (cũng 59, tính từ lần đọc cũ)
+UPDATE LOPHOCPHAN SET SISOMAX = 59 WHERE MALHP = 'LHP0102';
+-- ⏳ B ĐỢI — hàng đang bị A khoá. ĐỪNG đóng terminal, sang bước 5.
+
+-- BƯỚC 5 — SESSION A: COMMIT
 COMMIT;
--- B commit thành công: 100 -> 101
+-- Ngay lập tức SESSION B (đang đợi ở bước 4) chạy tiếp: Query OK —
+-- B ghi 59 (giá trị nó tính từ số 60 ĐỌC CŨ, không biết A đã ghi 59).
+COMMIT;   -- session B commit
 
--- (A3) SESSION A — cộng +1 trên giá trị ĐÃ ĐỌC CŨ (100), không phải 101
-UPDATE counter SET value = 100 + 1 WHERE id = 1;   -- ghi đè mất +1 của B
-COMMIT;
-
--- (A4) SESSION A — kiểm chứng
-SELECT value FROM counter WHERE id = 1;   -- Kết quả: 101  ❌ (mong 102)
--- => Phép +1 của B đã BỊ MẤT => LOST UPDATE
-
--- Reset trước khi sang phần B:
---   UPDATE counter SET value = 100 WHERE id = 1;
+-- KIỂM CHỨNG (session bất kỳ):
+--   SELECT SISOMAX FROM LOPHOCPHAN WHERE MALHP='LHP0102';
+-- --> 59  ❌ SAI! Hai phiếu giảm sĩ số nhưng chỉ mất đúng 1 (phải là 58) —
+--         cập nhật của A bị B ghi đè = LOST UPDATE
 
 -- #####################################################################
--- PHẦN B: KHẮC PHỤC — SELECT ... FOR UPDATE (Exclusive-2PL)
--- Đọc và giữ khoá độc quyền cho tới COMMIT => "đọc-tính-ghi" nguyên tố.
+-- PHẦN B — KHẮC PHỤC: đọc có khoá SELECT ... FOR UPDATE
+-- (đây chính là kỹ thuật sp_dangky_hocphan đang dùng để bảo vệ sĩ số)
 -- #####################################################################
 
--- (B1) SESSION A
-UPDATE counter SET value = 100 WHERE id = 1;
-START TRANSACTION;
-SELECT value FROM counter WHERE id = 1 FOR UPDATE;   -- 100, giữ X-lock
-
--- (B2) SESSION B — sẽ BỊ CHẶN ở lệnh dưới (đừng đóng terminal, chờ A commit)
-START TRANSACTION;
-UPDATE counter SET value = value + 1 WHERE id = 1;   -- ... đang chờ khoá của A ...
-
--- (B3) SESSION A — tính trên giá trị mới nhất, commit
-UPDATE counter SET value = value + 1 WHERE id = 1;   -- 100 -> 101
-COMMIT;                                              -- B giờ được chờ xong và chạy tiếp
-
--- (B4) SESSION A — kiểm chứng
-SELECT value FROM counter WHERE id = 1;   -- 101 (A) rồi B cộng tiếp -> 102 ✅
-
--- (B5) SESSION B — lệnh UPDATE ở bước B2 giờ chạy xong, gõ COMMIT
+-- [CẢ HAI SESSION] Reset về 60:
+UPDATE LOPHOCPHAN SET SISOMAX = 60 WHERE MALHP = 'LHP0102';
 COMMIT;
-SELECT value FROM counter WHERE id = 1;   -- Kết quả: 102 ✅ (không mất phép cộng nào)
 
--- Reset: UPDATE counter SET value = 100 WHERE id = 1;
+-- BƯỚC 1 — SESSION A: đọc CÓ KHOÁ hàng
+START TRANSACTION;
+SELECT SISOMAX AS 'A doc co khoa' FROM LOPHOCPHAN WHERE MALHP = 'LHP0102' FOR UPDATE;
+-- --> 60, đồng thời A giữ khoá độc quyền trên hàng LHP0102
+
+-- BƯỚC 2 — SESSION B: cũng FOR UPDATE
+START TRANSACTION;
+SELECT SISOMAX FROM LOPHOCPHAN WHERE MALHP = 'LHP0102' FOR UPDATE;
+-- ⏳ B TREO ĐỨNG — phải đợi khoá của A. Điểm nói với thầy:
+--    "B không đọc được số cũ nữa — nó phải ĐỢI"
+
+-- BƯỚC 3 — SESSION A: ghi 59 (= 60 - 1) + commit (khoá nhả ra khi commit)
+UPDATE LOPHOCPHAN SET SISOMAX = 59 WHERE MALHP = 'LHP0102';
+COMMIT;
+-- B (đang treo ở bước 2) trả kết quả ngay: --> 59 (con số MỚI của A)
+
+-- BƯỚC 4 — SESSION B: tính tiếp từ con số MỚI: 59 - 1 = 58
+UPDATE LOPHOCPHAN SET SISOMAX = 58 WHERE MALHP = 'LHP0102';
+COMMIT;
+
+-- KIỂM CHỨNG:
+--   SELECT SISOMAX FROM LOPHOCPHAN WHERE MALHP='LHP0102';
+-- --> 58  ✅ đúng! 60 - 2 phiếu = 58, không mất cập nhật nào
+
+-- #####################################################################
+-- RESET sau demo: chạy lại db/demo/demo.sql hoặc:
+--   UPDATE LOPHOCPHAN SET SISOMAX = 60 WHERE MALHP='LHP0102';
+-- =====================================================================
