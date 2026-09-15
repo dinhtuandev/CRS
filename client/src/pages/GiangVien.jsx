@@ -75,18 +75,17 @@ export default function GiangVienPage() {
           <select value={malhp} onChange={(e) => setMalhp(e.target.value)}>
             {lops.map((l) => (
               <option key={l.MALHP} value={l.MALHP}>
-                {l.MALHP} — {l.TENHP} ({l.MAHK})
+                {l.MALHP}, {l.TENHP} ({l.MAHK})
               </option>
             ))}
           </select>
         </div>
-        {lop && (
-          <div className="field">
-            <label>Sĩ số</label>
-            <div style={{ padding: "8px 0" }}>
-              <span className="badge info">{svs.length}/{lop.SISOMAX} SV · {daCoDiem} đã có điểm</span>
+        {lop && (            <div className="field">
+              <label>Sĩ số</label>
+              <div style={{ padding: "8px 0" }}>
+                <span className="badge info">{svs.length}/{lop.SISOMAX} sinh viên, {daCoDiem} đã có điểm</span>
+              </div>
             </div>
-          </div>
         )}
       </div>
 
@@ -130,7 +129,7 @@ export default function GiangVienPage() {
           </tbody>
         </table>
       </div>
-      <p className="hint">Điểm hệ 10 / chữ / hệ 4 do database tự tính theo công thức 10% CC + 30% GK + 60% CK sau khi lưu.</p>
+      <p className="hint">Điểm hệ 10, điểm chữ và hệ 4 do database tự tính theo công thức 10% chuyên cần, 30% giữa kỳ, 60% cuối kỳ sau khi lưu.</p>
     </div>
   );
 }

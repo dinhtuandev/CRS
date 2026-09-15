@@ -10,8 +10,8 @@ const ROLE_LABEL = { sinhvien: "Sinh viên", giangvien: "Giảng viên", admin: 
 
 const NAV = {
   sinhvien: [
-    { key: "dk", label: "Đăng ký học phần", desc: "Xem lớp mở, đăng ký / huỷ trong hạn cho phép" },
-    { key: "tkb", label: "Thời khoá biểu", desc: "Lịch học các lớp đang theo học trong học kỳ" },
+    { key: "dk", label: "Đăng ký học phần", desc: "Chọn lớp còn chỗ và đăng ký trong hạn cho phép của học kỳ" },
+    { key: "tkb", label: "Thời khoá biểu", desc: "Lịch học theo tuần của các lớp bạn đang theo học" },
     { key: "diem", label: "Bảng điểm", desc: "Điểm thành phần, GPA hệ 4 và CPA hệ 10" },
   ],
   giangvien: [
@@ -55,25 +55,31 @@ function Login({ onLogged }) {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <div className="logo">QLHP<span>.</span></div>
-          <h1>Quản lý học phần tín chỉ</h1>
-          <p>Hệ thống đăng ký học phần, quản lý điểm và thống kê học vụ cho 3 vai trò:</p>
-          <ul>
-            <li><b>Sinh viên</b> — đăng ký học phần, xem TKB và bảng điểm</li>
-            <li><b>Giảng viên</b> — quản lý lớp phụ trách, nhập điểm</li>
-            <li><b>Quản trị</b> — danh mục, học kỳ, thống kê</li>
+          <p className="kicker">Trường Đại học — Hệ tín chỉ</p>
+          <h1>Đăng ký học phần &amp; học bạ điện tử</h1>
+          <p className="sub">
+            Một hệ thống, ba vai trò: sinh viên tự đăng ký lớp trong hạn, giảng viên nhập điểm
+            trực tiếp vào lớp phụ trách, phòng đào tạo khoá sổ và theo dõi cảnh báo học vụ.
+          </p>
+          <ul className="role-list">
+            <li><b>Sinh viên</b><span>đăng ký, huỷ trong hạn, xem thời khoá biểu và bảng điểm</span></li>
+            <li><b>Giảng viên</b><span>lớp phụ trách, nhập điểm chuyên cần — giữa kỳ — cuối kỳ</span></li>
+            <li><b>Quản trị</b><span>danh mục, mở/khoá cửa sổ đăng ký và bảng điểm, thống kê</span></li>
           </ul>
         </div>
         <form className="login-form" onSubmit={submit}>
+          <div className="login-stamp" aria-hidden="true">
+            PHÒNG<br />ĐÀO TẠO<br />— QLHP —<br />BIÊN BẢN
+          </div>
           <h2>Đăng nhập</h2>
-          <p className="sub">Dùng tài khoản demo bên dưới (mật khẩu <span className="mono">123456</span>)</p>
-          <label>Tên đăng nhập</label>
-          <input value={tendangnhap} onChange={(e) => setTd(e.target.value)} autoFocus autoComplete="username" />
-          <label>Mật khẩu</label>
-          <input type="password" value={matkhau} onChange={(e) => setMk(e.target.value)} autoComplete="current-password" />
+          <p className="sub">Chọn nhanh một tài khoản demo (mật khẩu <span className="mono">123456</span>):</p>
+          <label htmlFor="ten-dang-nhap">Tên đăng nhập</label>
+          <input id="ten-dang-nhap" value={tendangnhap} onChange={(e) => setTd(e.target.value)} autoFocus autoComplete="username" />
+          <label htmlFor="mat-khau">Mật khẩu</label>
+          <input id="mat-khau" type="password" value={matkhau} onChange={(e) => setMk(e.target.value)} autoComplete="current-password" />
           {err && <div className="alert err">{err}</div>}
-          <button className="primary" disabled={busy} style={{ marginTop: 8 }}>
-            {busy ? "Đang đăng nhập…" : "Đăng nhập"}
+          <button className="primary" disabled={busy} style={{ marginTop: 10 }}>
+            {busy ? "Đang kiểm tra…" : "Đăng nhập"}
           </button>
           <div className="demo-accounts">
             {DEMO_ACCOUNTS.map((a) => (
@@ -127,7 +133,10 @@ function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="brand">QLHP<span>Quản lý học phần tín chỉ</span></div>
+        <div className="brand">
+          <div className="logo">QL<i>&amp;</i>HP</div>
+          <small>Quản lý học phần tín chỉ</small>
+        </div>
         <nav>
           <div className="nav-group">{ROLE_LABEL[user.vaitro]}</div>
           {items.map((i) => (
@@ -146,7 +155,7 @@ function App() {
               setSection(null);
             }}
           >
-            Đăng xuất
+            Thoát
           </button>
         </div>
       </aside>

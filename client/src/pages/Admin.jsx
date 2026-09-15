@@ -32,11 +32,11 @@ function ThongKe() {
 
   return (
     <div>
-      <div className="stats">
-        <div className="stat"><div className="num">{data.lop.length}</div><div className="lbl">Tổng số lớp học phần</div></div>
-        <div className="stat amber"><div className="num">{avgFill}%</div><div className="lbl">Lấp đầy trung bình</div></div>
-        <div className="stat red"><div className="num">{full}</div><div className="lbl">Lớp đã đầy</div></div>
-        <div className="stat green"><div className="num">{data.canhbao.length}</div><div className="lbl">SV cảnh báo học vụ</div></div>
+      <div className="transcript-strip">
+        <div className="cell"><div className="num">{data.lop.length}</div><div className="lbl">Tổng số lớp học phần</div></div>
+        <div className="cell"><div className="num">{avgFill}<small> %</small></div><div className="lbl">Lấp đầy trung bình</div></div>
+        <div className="cell red"><div className="num">{full}</div><div className="lbl">Lớp đã đầy</div></div>
+        <div className="cell"><div className="num">{data.canhbao.length}</div><div className="lbl">Sinh viên cảnh báo học vụ</div></div>
       </div>
 
       <div className="card">
@@ -144,7 +144,7 @@ function HocKyControls() {
                   <td className="center">{r.HOCKYTHU}</td>
                   <td>
                     <span className={`badge ${dangMo ? "ok" : "muted"}`}>{dangMo ? "Đang mở" : "Đóng"}</span>{" "}
-                    <span className="hint">{r.HANDANGKY_BD ? new Date(r.HANDANGKY_BD).toLocaleString("vi-VN") : "—"} → {r.HANDANGKY_KT ? new Date(r.HANDANGKY_KT).toLocaleString("vi-VN") : "—"}</span>
+                    <span className="hint">{r.HANDANGKY_BD ? new Date(r.HANDANGKY_BD).toLocaleString("vi-VN") : "—"} đến {r.HANDANGKY_KT ? new Date(r.HANDANGKY_KT).toLocaleString("vi-VN") : "—"}</span>
                   </td>
                   <td className="center">
                     <span className={`badge ${Number(r.KHOADIEM) === 1 ? "err" : "ok"}`}>

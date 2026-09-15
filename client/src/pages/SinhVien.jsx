@@ -3,7 +3,54 @@ import { api } from "../api.js";
 
 function fmtLich(l) {
   if (l.THU == null || l.TIETBATDAU == null || l.SOTIET == null) return "—";
-  return `T${l.THU} · tiết ${l.TIETBATDAU}–${l.TIETBATDAU + l.SOTIET - 1}`;
+  return `T${l.THU}, tiết ${l.TIETBATDAU}–${l.TIETBATDAU + l.SOTIET - 1}`;
+}
+
+const SO_TIET = 12;
+const THU_LABEL = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "CN"];
+
+function Timetable({ rows }) {
+  const placed = rows.filter((r) => r.THU != null && r.TIETBATDAU != null && r.SOTIET != null);
+  const cells = [];
+  for (const r of placed) {
+    cells.push(
+      <div
+        key={r.MALHP}
+        className="tt-lop"
+        style={{ gridColumn: r.THU, gridRow: `${r.TIETBATDAU + 1} / span ${Math.min(r.SOTIET, SO_TIET)}` }}
+        title={`${r.TENHP} — ${r.TENGV ?? ""}`}
+      >
+        <b>{r.TENHP}</b>
+        <span className="tt-ma">{r.MALHP}{r.PHONGHOC ? `, phòng ${r.PHONGHOC}` : ""}</span>
+      </div>
+    );
+  }
+  const unplaced = rows.filter((r) => r.THU == null || r.TIETBATDAU == null || r.SOTIET == null);
+
+  return (
+    <div>
+      <div className="timetable">
+        <div className="tt-head" style={{ gridColumn: 1, gridRow: 1 }}>Tiết</div>
+        {THU_LABEL.map((t, i) => (
+          <div key={t} className="tt-head" style={{ gridColumn: i + 2, gridRow: 1 }}>{t}</div>
+        ))}
+        {Array.from({ length: SO_TIET }, (_, i) => (
+          <div key={i} className="tt-tiet" style={{ gridColumn: 1, gridRow: i + 2 }}>Tiết {i + 1}</div>
+        ))}
+        {Array.from({ length: SO_TIET * 7 }, (_, i) => {
+          const col = (i % 7) + 2;
+          const row = Math.floor(i / 7) + 2;
+          return <div key={i} className="tt-cell" style={{ gridColumn: col, gridRow: row }} />;
+        })}
+        {cells}
+      </div>
+      {unplaced.length > 0 && (
+        <p className="hint">
+          Lịch chưa xếp: {unplaced.map((r) => `${r.TENHP} (${r.MALHP})`).join(", ")}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export default function SinhVienPage({ section }) {
@@ -92,12 +139,6 @@ export default function SinhVienPage({ section }) {
               </select>
             </div>
           )}
-          {section === "tkb" && (
-            <div className="field">
-              <label>Đã đăng ký</label>
-              <div style={{ padding: "8px 0" }}><span className="badge info">{dangky.length} lớp · {tongTC} tín chỉ</span></div>
-            </div>
-          )}
         </div>
       )}
 
@@ -112,7 +153,7 @@ export default function SinhVienPage({ section }) {
               <tr><th>Mã LHP</th><th>Học phần</th><th className="num">TC</th><th>Giảng viên</th><th>Lịch học</th><th className="center">Còn chỗ</th><th></th></tr>
             </thead>
             <tbody>
-              {lops.length === 0 && <tr><td colSpan={7} className="empty">Không có lớp học phần trong học kỳ này</td></tr>}
+              {lops.length === 0 && <tr><td colSpan={7} className="empty">Không có lớp học phần nào mở trong học kỳ này</td></tr>}
               {lops.map((l) => {
                 const daDk = dangky.some((d) => d.MALHP === l.MALHP);
                 return (
@@ -121,7 +162,7 @@ export default function SinhVienPage({ section }) {
                     <td>{l.TENHP} <span className="hint">({l.MAHP})</span></td>
                     <td className="num">{l.SOTINCHI}</td>
                     <td>{l.TENGV}</td>
-                    <td>{fmtLich(l)}{l.PHONGHOC ? ` · ${l.PHONGHOC}` : ""}</td>
+                    <td>{fmtLich(l)}{l.PHONGHOC ? `, phòng ${l.PHONGHOC}` : ""}</td>
                     <td className="center">
                       <span className={`badge ${l.CONCHO <= 0 ? "err" : l.CONCHO <= 5 ? "warn" : "ok"}`}>
                         {l.CONCHO}/{l.SISOMAX}
@@ -145,25 +186,24 @@ export default function SinhVienPage({ section }) {
       )}
 
       {section === "tkb" && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Mã LHP</th><th>Học phần</th><th className="center">Thứ</th><th>Tiết</th><th>Phòng</th><th>Giảng viên</th></tr>
-            </thead>
-            <tbody>
-              {dangky.length === 0 && <tr><td colSpan={6} className="empty">Chưa đăng ký lớp nào trong học kỳ này</td></tr>}
-              {dangky.map((d) => (
-                <tr key={d.MALHP}>
-                  <td className="mono">{d.MALHP}</td>
-                  <td>{d.TENHP}</td>
-                  <td className="center">{d.THU ?? "—"}</td>
-                  <td>{d.TIETBATDAU != null && d.SOTIET != null ? `${d.TIETBATDAU} → ${d.TIETBATDAU + d.SOTIET - 1}` : "—"}</td>
-                  <td>{d.PHONGHOC ?? "—"}</td>
-                  <td>{d.TENGV}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <div className="transcript-strip">
+            <div className="cell">
+              <div className="num">{dangky.length}</div>
+              <div className="lbl">Lớp đang theo học</div>
+            </div>
+            <div className="cell">
+              <div className="num">{tongTC}</div>
+              <div className="lbl">Tín chỉ học kỳ này</div>
+            </div>
+            <div className="cell">
+              <div className="num">{mahk || "–"}</div>
+              <div className="lbl">Học kỳ</div>
+            </div>
+          </div>
+          {dangky.length === 0
+            ? <div className="table-wrap"><table><tbody><tr><td className="empty">Chưa đăng ký lớp nào trong học kỳ này — quay lại mục Đăng ký học phần để chọn lớp</td></tr></tbody></table></div>
+            : <Timetable rows={dangky} />}
         </div>
       )}
 
@@ -189,15 +229,27 @@ function BangDiem() {
 
   return (
     <div>
-      <div className="stats">
-        <div className="stat green"><div className="num">{data.tong.gpa4 ?? "–"}</div><div className="lbl">GPA hệ 4 toàn khoá</div></div>
-        <div className="stat"><div className="num">{data.tong.cpa10 ?? "–"}</div><div className="lbl">CPA hệ 10 toàn khoá</div></div>
-        <div className="stat amber"><div className="num">{data.tong.tinchi_dat}</div><div className="lbl">Tín chỉ đã đạt</div></div>
+      <div className="transcript-strip">
+        <div className="cell">
+          <div className="num">{data.tong.gpa4 ?? "–"}</div>
+          <div className="lbl">GPA hệ 4 toàn khoá</div>
+        </div>
+        <div className="cell">
+          <div className="num">{data.tong.cpa10 ?? "–"}<small> /10</small></div>
+          <div className="lbl">CPA hệ 10 toàn khoá</div>
+        </div>
+        <div className="cell">
+          <div className="num">{data.tong.tinchi_dat}</div>
+          <div className="lbl">Tín chỉ đã đạt</div>
+        </div>
       </div>
       {data.hockys.map((hk) => (
         <div key={hk.mahk} className="card">
-          <h3>{hk.mahk} — GPA {hk.gpa4 ?? "–"} · CPA {hk.cpa10 ?? "–"}</h3>
-          <div className="table-wrap" style={{ marginBottom: 0, boxShadow: "none" }}>
+          <h3>
+            {hk.mahk}, GPA {hk.gpa4 != null ? hk.gpa4.toFixed(2) : null}/4, CPA {hk.cpa10 != null ? hk.cpa10.toFixed(2) : null}/10
+            {hk.gpa4 == null && <span className="hint"> (chưa có điểm)</span>}
+          </h3>
+          <div className="table-wrap" style={{ marginBottom: 0 }}>
             <table>
               <thead>
                 <tr><th>Mã HP</th><th>Tên</th><th className="num">TC</th><th>Lần học</th><th className="num">CC</th><th className="num">GK</th><th className="num">CK</th><th className="num">Hệ 10</th><th className="center">Chữ</th><th className="num">Hệ 4</th></tr>
