@@ -18,12 +18,15 @@ API quản lý đăng ký học phần theo hệ tín chỉ.
 - Xác thực: JWT Bearer token (nhận từ \`POST /api/auth/login\`, thời hạn 8h)
 - Mật khẩu demo: **123456**
 
-> Nhấn nút **Authorize** ở góc trên, nhập token dạng: \`Bearer <token>\`
+> Nhấn nút **Authorize** ở góc trên và dán CHỈ phần token (bắt đầu bằng \`eyJ…\`) — UI tự thêm chữ \`Bearer\`. Dán cả chuỗi \`Bearer eyJ…\` sẽ bị 401.
 `,
     },
     servers: [
       { url: "http://localhost:3000", description: "Local dev" },
-      { url: "http://localhost:8080", description: "Production (qua nginx proxy)" },
+      {
+        url: "http://localhost:8080",
+        description: "Production (qua nginx proxy)",
+      },
     ],
     components: {
       securitySchemes: {
@@ -45,7 +48,10 @@ API quản lý đăng ký học phần theo hệ tín chỉ.
           type: "object",
           properties: {
             token: { type: "string", description: "JWT token để gọi API khác" },
-            vaitro: { type: "string", enum: ["sinhvien", "giangvien", "admin"] },
+            vaitro: {
+              type: "string",
+              enum: ["sinhvien", "giangvien", "admin"],
+            },
             masv: { type: "string", nullable: true },
             magv: { type: "string", nullable: true },
             ten: { type: "string" },
@@ -77,6 +83,6 @@ export function setupSwagger(app) {
     swaggerUi.setup(swaggerSpec, {
       customCss: ".swagger-ui-logo { display: none; }",
       customFavicon: false,
-    })
+    }),
   );
 }

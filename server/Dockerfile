@@ -6,5 +6,4 @@ RUN npm install --omit=dev --no-audit --no-fund
 FROM base AS runtime
 COPY . .
 EXPOSE 3000
-ENV SWAGGER_ENABLED=false
 CMD ["node", "index.js"]

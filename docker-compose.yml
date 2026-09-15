@@ -30,6 +30,7 @@ services:
       DB_USER: app_qlhp
       DB_PASSWORD: app_qlhp_pass
       DB_NAME: qlhocphan
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
     ports:
       - "${API_PORT:-3000}:3000"
     depends_on:
