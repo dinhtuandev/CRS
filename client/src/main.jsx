@@ -114,6 +114,41 @@ function App() {
     })();
   }, []);
 
+  // Sidebar kéo giở: nhớ độ rộng qua localStorage, nhấp đôi handle để đặt lại.
+  // Hooks phải đứng TRƯỚC các early-return bên dưới (Rules of Hooks).
+  const SB_KEY = "qlhp_sidebar_w";
+  const DEFAULT_W = 252;
+  const [sbWidth, setSbWidth] = useState(() => {
+    const w = parseInt(localStorage.getItem(SB_KEY), 10);
+    return w >= 200 && w <= 420 ? w : DEFAULT_W;
+  });
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (!dragging) return;
+    function onMove(e) {
+      const w = Math.min(420, Math.max(200, e.clientX));
+      setSbWidth(w);
+    }
+    function onUp() {
+      setDragging(false);
+      setSbWidth((w) => {
+        localStorage.setItem(SB_KEY, String(w));
+        return w;
+      });
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [dragging]);
+
   if (!ready) return <div className="loading">Đang tải…</div>;
   if (!user) {
     return (
@@ -132,7 +167,7 @@ function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className="sidebar" style={{ width: sbWidth }}>
         <div className="brand">
           <div className="logo">QL<i>&amp;</i>HP</div>
           <small>Quản lý học phần tín chỉ</small>
@@ -158,6 +193,18 @@ function App() {
             Thoát
           </button>
         </div>
+        <div
+          className={`sb-resize ${dragging ? "dragging" : ""}`}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Kéo để đổi độ rộng sidebar"
+          title="Kéo để đổi độ rộng (nhấp đôi để đặt lại)"
+          onMouseDown={() => setDragging(true)}
+          onDoubleClick={() => {
+            localStorage.removeItem(SB_KEY);
+            setSbWidth(DEFAULT_W);
+          }}
+        />
       </aside>
       <div className="main">
         <header className="pagebar">

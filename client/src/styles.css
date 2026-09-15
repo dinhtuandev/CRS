@@ -181,6 +181,34 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; }
   height: 100vh;
 }
 
+/* Handle keo mo rong sidebar o mep phai */
+.sb-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+}
+.sb-resize::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 46px;
+  border-radius: 2px;
+  background: var(--board-line);
+  transition: background 0.15s ease, height 0.15s ease;
+}
+.sb-resize:hover::after,
+.sb-resize.dragging::after {
+  background: var(--gold);
+  height: 72px;
+}
+
 .sidebar .brand {
   padding: 22px 22px 18px;
   border-bottom: 1px solid var(--board-line);
@@ -267,6 +295,16 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Sidebar du rong thi hien ten day du 2 dong thay vi cat */
+.sidebar[style*="width"] .user-card .who b {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: clip;
+  line-height: 1.3;
 }
 .user-card button {
   background: transparent;
@@ -497,7 +535,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   .app { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; }
+  .sidebar { width: 100% !important; height: auto; position: static; }
+  .sb-resize { display: none; }
   .sidebar nav { flex-direction: row; flex-wrap: wrap; }
   .sidebar nav button { border-left: none; border-bottom: 3px solid transparent; }
   .sidebar nav button.active { border-bottom-color: var(--gold); }
