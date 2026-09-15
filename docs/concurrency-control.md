@@ -160,12 +160,13 @@ db/demo/
 │   Menu: 1. Lost Update  2. Dirty Read  3. Non-repeatable Read
 │          4. Deadlock + retry  5. Phantom  6. Exclusive-2PL  7. Run all
 │
-├── demo.sql                  — SQL setup: bảng counter + dữ liệu mẫu
-├── 01_lost_update.sql        — A: mất +1 (RC)     | B: FOR UPDATE (2PL)
-├── 02_dirty_read.sql         — A: đọc bẩn (RU)    | B: READ COMMITTED
-├── 03_nonrepeatable_read.sql — A: giá trị đổi (RC)| B: REPEATABLE READ snapshot
-├── 04_phantom.sql            — A: hàng ma (RR)    | B/C: next-key lock, SERIALIZABLE
-└── 05_deadlock_retry.sql     — A: ERROR 1213      | B/C: lock ordering, retry proc
+├── demo.sql                  — reset dữ liệu mẫu trên chính qlhocphan (LHP0101/LHP0102)
+├── 01_lost_update.sql        — sĩ số LHP0102: mất −1 (RC)      | B: FOR UPDATE (2PL)
+├── 02_dirty_read.sql         — phòng học LHP0101: đọc bẩn (RU) | B: READ COMMITTED
+├── 03_nonrepeatable_read.sql — sĩ số đổi giữa 2 lần đọc (RC)   | B: REPEATABLE READ snapshot
+├── 04_phantom.sql            — mở lớp mới giữa lúc thống kê    | B/C: next-key lock, SERIALIZABLE
+├── 05_deadlock_retry.sql     — ERROR 1213 (khoá chéo 2 lớp)    | B/C: lock ordering, retry proc
+└── 06_oversell_2lop.sql      — gỡ trigger → oversell thật      | B/C: trigger + procedure
 ```
 
 ## 4. Concurrency Matrix: Protocols vs Scenarios

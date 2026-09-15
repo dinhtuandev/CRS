@@ -24,7 +24,7 @@
 | Thành phần | Mô tả |
 |---|---|
 | `db/` | `01_schema.sql` (bảng, function, procedure, trigger, view), `02_security.sql` (role + GRANT), `03_seed.sql` (data demo), `demo/` (5 kịch bản lỗi tương tranh + khắc phục) |
-| `docs/` | `demo-concurrency.md` — tài liệu demo từng bước cho 5 lỗi tương tranh |
+| `docs/` | `demo-concurrency.md` — demo 5 lỗi tương tranh từng bước; `huong-dan-demo-db.md` — chạy demo + soi DB bằng MySQL + dùng Swagger |
 | `server/` | Express 5 API + JWT, kết nối MySQL qua user `app_qlhp`, có Swagger UI |
 | `client/` | React 19 + Vite, proxy `/api` → `http://localhost:3000` |
 | `docker-compose.yml` | 3 service: `db` (MySQL 8.0), `api`, `web` (nginx) |
@@ -49,7 +49,7 @@ docker compose up -d --wait
 |---|---|---|
 | Web     | http://localhost:8080 | nginx serve bản build + proxy `/api` |
 | API     | http://localhost:3000 | Express + JWT + Swagger UI |
-| Swagger | http://localhost:3000/api-docs | Tài liệu API (nhấn Authorize → nhập `Bearer <token>`) |
+| Swagger | http://localhost:3000/api-docs | Tài liệu API (Authorize → dán **chỉ** token `eyJ…`, UI tự thêm `Bearer`) |
 | MySQL   | localhost:3307 | user `root`/`root123`, DB `qlhocphan` |
 
 Kiểm tra:
@@ -195,13 +195,13 @@ docker compose up -d --wait
 # Nạp CSDL demo (chạy 1 lần)
 docker compose exec -T db mysql -uroot -proot123 --default-character-set=utf8mb4 < db/demo/demo.sql
 
-# (Tuỳ chọn) tự động hoá kiểm chứng cả 5 lỗi + fix — 22 PASS
+# (Tuỳ chọn) tự động hoá kiểm chứng cả 6 lỗi + fix — 34 PASS (tự reset DB về chuẩn)
 cd server && node ../scripts/verify-demos.mjs
 
-# Mở 2 terminal session A và B
-docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhp_demo
-docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhp_demo
-# Gõ lệnh theo BƯỚC đánh số trong db/demo/01_lost_update.sql → 05_deadlock_retry.sql
+# Mở 2 terminal session A và B — demo NGAY TRÊN DB dự án qlhocphan
+docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhocphan
+docker compose exec db mysql -uroot -proot123 --default-character-set=utf8mb4 qlhocphan
+# Gõ lệnh theo BƯỚC đánh số trong db/demo/01_lost_update.sql → 06_oversell_2lop.sql
 # (kết quả mong đợi ghi sẵn dưới mỗi lệnh)
 ```
 
