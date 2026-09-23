@@ -150,12 +150,14 @@ export default function SinhVienPage({ section }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Mã LHP</th><th>Học phần</th><th className="num">TC</th><th>Giảng viên</th><th>Lịch học</th><th className="center">Còn chỗ</th><th></th></tr>
+              <tr><th>Mã LHP</th><th>Học phần</th><th className="num">TC</th><th>Giảng viên</th><th>Lịch học</th><th className="center">Trạng thái chỗ</th><th></th></tr>
             </thead>
             <tbody>
               {lops.length === 0 && <tr><td colSpan={7} className="empty">Không có lớp học phần nào mở trong học kỳ này</td></tr>}
               {lops.map((l) => {
                 const daDk = dangky.some((d) => d.MALHP === l.MALHP);
+                const conCho = l.CONCHO > 0;
+                const sapHet = conCho && l.CONCHO <= 5;
                 return (
                   <tr key={l.MALHP}>
                     <td className="mono">{l.MALHP}</td>
@@ -164,8 +166,9 @@ export default function SinhVienPage({ section }) {
                     <td>{l.TENGV}</td>
                     <td>{fmtLich(l)}{l.PHONGHOC ? `, phòng ${l.PHONGHOC}` : ""}</td>
                     <td className="center">
-                      <span className={`badge ${l.CONCHO <= 0 ? "err" : l.CONCHO <= 5 ? "warn" : "ok"}`}>
-                        {l.CONCHO}/{l.SISOMAX}
+                      <span className={`badge seat-status ${!conCho ? "err" : sapHet ? "warn" : "ok"}`}>
+                        <b>{conCho ? "Còn trống" : "Hết chỗ"}</b>
+                        <small>{l.SISO_HIENTAI}/{l.SISOMAX} sinh viên</small>
                       </span>
                     </td>
                     <td>

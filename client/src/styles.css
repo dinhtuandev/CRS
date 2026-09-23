@@ -409,6 +409,16 @@ td.center, th.center { text-align: center; }
 .badge.err  { background: var(--red-bg); color: var(--red-pen); }
 .badge.info { background: var(--blue-bg); color: var(--blue-ink); }
 .badge.muted { background: transparent; color: var(--ink-soft); border-color: var(--paper-edge); }
+.seat-status {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.25;
+  text-align: left;
+}
+.seat-status b { font-size: 12px; }
+.seat-status small { font-size: 11px; font-weight: 400; opacity: 0.85; }
 
 /* ---------- Forms / buttons ---------- */
 input, select, button { font: inherit; }
